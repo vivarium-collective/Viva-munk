@@ -11,14 +11,13 @@ import math
 import copy
 
 import numpy as np
-
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 # vivarium imports
+from process_bigraph import Process, Composite, process_registry, types
 from pymunk_process.pymunk_minimal import PymunkMinimal as Pymunk
 from pymunk_process.units import units, remove_units
-from process_bigraph import Process, Composite, process_registry
 
 
 DEFAULT_LENGTH_UNIT = units.um
@@ -76,6 +75,22 @@ def remove_from_dict(d, removed):
     return d
 
 
+# # Add a bounds type
+# bounds_type = {
+#     'x': 'float',
+#     'y': 'float',
+# }
+# types.type_registry.register('bounds', bounds_type)
+boundary_type = {
+    'location': 'list',  # TODO make this work: 'tuple[2,float]',
+    'diameter': 'length',
+    'mass': 'mass',
+    'velocity': 'length/time'
+}
+types.type_registry.register('boundary', boundary_type)
+types.type_registry.register('unit', {'_super': 'string'})
+
+
 class Multibody(Process):
     """Multibody process for tracking cell bodies.
 
@@ -104,25 +119,38 @@ class Multibody(Process):
     """
 
     config_schema = {
-        'jitter_force': 1e-6,
-        'bounds': remove_units(DEFAULT_BOUNDS),
-        'length_unit': DEFAULT_LENGTH_UNIT,
-        'mass_unit': DEFAULT_MASS_UNIT,
-        'velocity_unit': DEFAULT_VELOCITY_UNIT,
-        'animate': False,
+        'jitter_force': {
+            '_type': 'float',
+            '_default': 1e-6,
+        },
+        'bounds': {
+            'x': 'float',
+            'y': 'float',
+        },
+        'length_unit': {'_type': 'string', '_default': 'um'},
+        'mass_unit': {'_type': 'string', '_default': 'ng'},
+        'velocity_unit': {'_type': 'string', '_default': 'um/s'},
+        'animate': 'boolean',
     }
+    # config_schema = {
+    #     'jitter_force': 1e-6,
+    #     'bounds': remove_units(DEFAULT_BOUNDS),
+    #     'length_unit': DEFAULT_LENGTH_UNIT,
+    #     'mass_unit': DEFAULT_MASS_UNIT,
+    #     'velocity_unit': DEFAULT_VELOCITY_UNIT,
+    #     'animate': False,
+    # }
 
     def __init__(self, config=None):
         super().__init__(config)
 
-        self.length_unit = self.config['length_unit']
-        self.mass_unit = self.config['mass_unit']
-        self.velocity_unit = self.config['velocity_unit']
-        self.neighbor_distance = self.config['neighbor_distance'].to(self.length_unit).magnitude
+        self.length_unit = units(self.config['length_unit'])
+        self.mass_unit = units(self.config['mass_unit'])
+        self.velocity_unit = units(self.config['velocity_unit'])
         self.cell_loc_units = {}
 
         # make the multibody object
-        timestep = self.config['timestep']
+        timestep = self.config.get('interval', 1.0)  # TODO -- how do we get the timestep default?
         pymunk_config = {
             'cell_shape': 'circle',
             'jitter_force': self.config['jitter_force'],
@@ -139,34 +167,10 @@ class Multibody(Process):
             self.ax = plt.gca()
             self.ax.set_aspect('equal')
 
-    def ports_schema(self):
-        glob_schema = {
-            '*': {
-                'boundary': {
-                    'location': {
-                        '_emit': True,
-                        '_default': [
-                            0.5 * bound for bound in self.config['bounds']],
-                        '_updater': 'set',
-                        '_divider': {
-                            'divider': daughter_locations,
-                            'topology': {
-                                'diameter': ('..', 'diameter',)
-                            },
-                        }
-                    },
-                    'diameter': {
-                        '_emit': True,
-                        '_default': 1.0 * self.length_unit},
-                    'mass': {
-                        '_default': 1.0 * self.mass_unit},
-                    'velocity': {
-                        '_default': 0.0 * self.velocity_unit,
-                    }
-                }
-            }
+    def schema(self):
+        return {
+            'agents': 'tree[boundary]'  # TODO -- make a simpler type "mapping"
         }
-        return {'agents': glob_schema}
 
     def update(self, state, interval):
         agents = state['agents']
@@ -283,7 +287,9 @@ def get_agent_config(
         }
     }
 
+
 def test_multibody():
+    n_agents = 10
     bounds = DEFAULT_BOUNDS
     state = {
         'multibody': {
@@ -297,7 +303,7 @@ def test_multibody():
             }
         },
         'agents': {
-            '0': get_agent_config(bounds=bounds)
+            str(i): get_agent_config(bounds=bounds) for i in range(n_agents)
         }
     }
 
@@ -305,6 +311,10 @@ def test_multibody():
         'state': state
     })
 
+    # run the simulation
+    sim.run(10)
+
+    pass
 
 
 if __name__ == '__main__':
