@@ -173,7 +173,7 @@ class Multibody(Process):
         }
 
     def update(self, state, interval):
-        agents = state['agents']
+        agents = state.get('agents', {})
 
         # animate before update
         if self.animate:
