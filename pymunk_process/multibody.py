@@ -85,7 +85,7 @@ point2d_type = {
 types.type_registry.register('point2d', point2d_type)
 
 boundary_type = {
-    'location': 'list[float]',  # TODO make this work: 'tuple[2,float]',
+    'location': 'list[length]',  # TODO make this work: 'tuple[2,float]',
     'diameter': 'length',
     'mass': 'mass',
     'velocity': 'length/time'
@@ -184,8 +184,9 @@ class Multibody(Process):
             self.animate_frame(agents)
 
         # update physics with new agents
-        agents = self.bodies_remove_units(agents)
-        self.physics.update_bodies(agents)
+        munk_agents = self.bodies_remove_units(
+            copy.deepcopy(agents))
+        self.physics.update_bodies(munk_agents)
 
         # run simulation
         self.physics.run(interval)
@@ -283,7 +284,9 @@ def get_agent_config(
 
     bounds = bounds or DEFAULT_BOUNDS
     if location:
-        location = [loc * bounds[n] for n, loc in enumerate(location)]
+        location = [
+            loc * bounds[n] * unit_system['length']
+            for n, loc in enumerate(location)]
     else:
         location = make_random_position(bounds)
 
@@ -315,10 +318,15 @@ def test_multibody():
                 'agents': ['agents'],
             }
         },
+
         'agents': {
-            str(i): get_agent_config(bounds=bounds) for i in range(n_agents)
+            str(i): get_agent_config(
+                bounds=bounds)
+            for i in range(n_agents)
         }
     }
+
+    import ipdb; ipdb.set_trace()
 
     sim = Composite({
         'state': state
