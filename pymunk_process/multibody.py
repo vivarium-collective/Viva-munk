@@ -23,7 +23,8 @@ from pymunk_process.units import units, remove_units
 DEFAULT_LENGTH_UNIT = units.um
 DEFAULT_BOUNDS = [200 * DEFAULT_LENGTH_UNIT, 200 * DEFAULT_LENGTH_UNIT]
 DEFAULT_MASS_UNIT = units.ng
-DEFAULT_VELOCITY_UNIT = units.um / units.s
+DEFAULT_TIME_UNIT = units.s
+DEFAULT_VELOCITY_UNIT = DEFAULT_LENGTH_UNIT / DEFAULT_TIME_UNIT
 
 # constants
 PI = math.pi
@@ -75,20 +76,22 @@ def remove_from_dict(d, removed):
     return d
 
 
-# # Add a bounds type
-# bounds_type = {
-#     'x': 'float',
-#     'y': 'float',
-# }
-# types.type_registry.register('bounds', bounds_type)
+# Add a bounds type
+point2d_type = {
+    'x': 'float',
+    'y': 'float',
+}
+
+types.type_registry.register('point2d', point2d_type)
+
 boundary_type = {
-    'location': 'list',  # TODO make this work: 'tuple[2,float]',
+    'location': 'list[float]',  # TODO make this work: 'tuple[2,float]',
     'diameter': 'length',
     'mass': 'mass',
     'velocity': 'length/time'
 }
+
 types.type_registry.register('boundary', boundary_type)
-types.type_registry.register('unit', {'_super': 'string'})
 
 
 class Multibody(Process):
@@ -123,15 +126,13 @@ class Multibody(Process):
             '_type': 'float',
             '_default': 1e-6,
         },
-        'bounds': {
-            'x': 'float',
-            'y': 'float',
-        },
-        'length_unit': {'_type': 'string', '_default': 'um'},
+        'bounds': 'point2d',
+        'length_unit': {'_type': 'string', '_default': 'um'}, # TODO: make a units type
         'mass_unit': {'_type': 'string', '_default': 'ng'},
-        'velocity_unit': {'_type': 'string', '_default': 'um/s'},
+        'time_unit': {'_type': 'string', '_default': 's'},
         'animate': 'boolean',
     }
+
     # config_schema = {
     #     'jitter_force': 1e-6,
     #     'bounds': remove_units(DEFAULT_BOUNDS),
@@ -146,7 +147,8 @@ class Multibody(Process):
 
         self.length_unit = units(self.config['length_unit'])
         self.mass_unit = units(self.config['mass_unit'])
-        self.velocity_unit = units(self.config['velocity_unit'])
+        self.time_unit = units(self.config['time_unit'])
+        self.velocity_unit = self.length_unit / self.time_unit
         self.cell_loc_units = {}
 
         # make the multibody object
@@ -173,6 +175,8 @@ class Multibody(Process):
         }
 
     def update(self, state, interval):
+        import ipdb; ipdb.set_trace()
+
         agents = state.get('agents', {})
 
         # animate before update
@@ -264,10 +268,18 @@ def get_agent_config(
         # volume=None,
         diameter=None,
         mass=None,
+        unit_system=None,
 ):
-    diameter = diameter or 5 * DEFAULT_LENGTH_UNIT
-    mass = mass or 5 * DEFAULT_MASS_UNIT
+    unit_system = unit_system or {
+        'length': DEFAULT_LENGTH_UNIT,
+        'mass': DEFAULT_MASS_UNIT,
+        'time': DEFAULT_TIME_UNIT,
+        'velocity': DEFAULT_LENGTH_UNIT / DEFAULT_TIME_UNIT}
+
+    diameter = diameter or 5 * unit_system['length']
+    mass = mass or 5 * unit_system['mass']
     volume = sphere_volume_from_diameter(diameter)
+    velocity = velocity or 5 * unit_system['velocity']
 
     bounds = bounds or DEFAULT_BOUNDS
     if location:
@@ -291,6 +303,7 @@ def get_agent_config(
 def test_multibody():
     n_agents = 10
     bounds = DEFAULT_BOUNDS
+
     state = {
         'multibody': {
             '_type': 'process',
@@ -299,7 +312,7 @@ def test_multibody():
                 'bounds': bounds
             },
             'wires': {
-                'agents': 'agents'
+                'agents': ['agents'],
             }
         },
         'agents': {
