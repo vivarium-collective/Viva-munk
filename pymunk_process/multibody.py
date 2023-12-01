@@ -85,7 +85,13 @@ point2d_type = {
 types.type_registry.register('point2d', point2d_type)
 
 boundary_type = {
-    'location': 'list[length]',  # TODO make this work: 'tuple[2,float]',
+    # 'location': 'list[length]',  # TODO make this work: 'tuple[2,float]',
+    'location': {
+        '_type': 'list',
+        '_element': {
+            '_type': 'length',
+            '_apply': 'set'}},
+
     'diameter': 'length',
     'mass': 'mass',
     'velocity': 'length/time'
