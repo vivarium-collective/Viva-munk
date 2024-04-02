@@ -15,9 +15,10 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 # vivarium imports
-from process_bigraph import Process, Composite, process_registry, types
+from process_bigraph import Process, Composite, ProcessTypes
 from pymunk_process.pymunk_minimal import PymunkMinimal as Pymunk
 from pymunk_process.units import units, remove_units
+from pymunk_process import REGISTER_TYPES
 
 
 DEFAULT_LENGTH_UNIT = units.um
@@ -76,28 +77,17 @@ def remove_from_dict(d, removed):
     return d
 
 
-# Add a bounds type
-point2d_type = {
-    'x': 'float',
-    'y': 'float',
-}
+def register_multibody_types(core):
+    # Add a bounds type
+    core.register('point2d', {
+        'x': 'float',
+        'y': 'float'})
 
-types.type_registry.register('point2d', point2d_type)
-
-boundary_type = {
-    # 'location': 'list[length]',  # TODO make this work: 'tuple[2,float]',
-    'location': {
-        '_type': 'list',
-        '_element': {
-            '_type': 'length',
-            '_apply': 'set'}},
-
-    'diameter': 'length',
-    'mass': 'mass',
-    'velocity': 'length/time'
-}
-
-types.type_registry.register('boundary', boundary_type)
+    core.register('boundary', {
+        'location': 'point2d',
+        'diameter': 'length',
+        'mass': 'mass',
+        'velocity': 'length/time'})
 
 
 class Multibody(Process):
@@ -148,8 +138,12 @@ class Multibody(Process):
     #     'animate': False,
     # }
 
-    def __init__(self, config=None):
-        super().__init__(config)
+    def __init__(self, config=None, core=None):
+        # This means registration must be idempotent
+        # make this operation fast if already registered (!)
+        # REGISTER_TYPES(self.core)
+
+        super().__init__(config, core)
 
         self.length_unit = units(self.config['length_unit'])
         self.mass_unit = units(self.config['mass_unit'])
@@ -175,10 +169,15 @@ class Multibody(Process):
             self.ax = plt.gca()
             self.ax.set_aspect('equal')
 
-    def schema(self):
+    def inputs(self):
         return {
-            'agents': 'tree[boundary]'  # TODO -- make a simpler type "mapping"
-        }
+            'agents': 'map[boundary:boundary]'}
+
+
+    def outputs(self):
+        return {
+            'agents': 'map[boundary:boundary]'}
+
 
     def update(self, state, interval):
         import ipdb; ipdb.set_trace()
@@ -265,9 +264,6 @@ class Multibody(Process):
         plt.pause(0.01)
 
 
-process_registry.register('multibody', Multibody)
-
-
 def get_agent_config(
         location=None,
         bounds=None,
@@ -309,7 +305,7 @@ def get_agent_config(
     }
 
 
-def test_multibody():
+def test_multibody(core):
     n_agents = 10
     bounds = DEFAULT_BOUNDS
 
@@ -320,7 +316,10 @@ def test_multibody():
             'config': {
                 'bounds': bounds
             },
-            'wires': {
+            'inputs': {
+                'agents': ['agents'],
+            },
+            'outputs': {
                 'agents': ['agents'],
             }
         },
@@ -332,17 +331,19 @@ def test_multibody():
         }
     }
 
-    import ipdb; ipdb.set_trace()
-
     sim = Composite({
         'state': state
-    })
+    }, core=core)
 
     # run the simulation
     sim.run(10)
 
-    pass
+    import ipdb; ipdb.set_trace()
 
 
 if __name__ == '__main__':
-    test_multibody()
+    core = ProcessTypes()
+    REGISTER_TYPES(core)
+    core.process_registry.register('multibody', Multibody)
+
+    test_multibody(core)
