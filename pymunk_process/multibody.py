@@ -77,19 +77,6 @@ def remove_from_dict(d, removed):
     return d
 
 
-def register_multibody_types(core):
-    # Add a bounds type
-    core.register('point2d', {
-        'x': 'float',
-        'y': 'float'})
-
-    core.register('boundary', {
-        'location': 'point2d',
-        'diameter': 'length',
-        'mass': 'mass',
-        'velocity': 'length/time'})
-
-
 class Multibody(Process):
     """Multibody process for tracking cell bodies.
 
@@ -123,20 +110,12 @@ class Multibody(Process):
             '_default': 1e-6,
         },
         'bounds': 'point2d',
-        'length_unit': {'_type': 'string', '_default': 'um'}, # TODO: make a units type
+        'length_unit': {'_type': 'string', '_default': 'um'},
         'mass_unit': {'_type': 'string', '_default': 'ng'},
         'time_unit': {'_type': 'string', '_default': 's'},
         'animate': 'boolean',
     }
 
-    # config_schema = {
-    #     'jitter_force': 1e-6,
-    #     'bounds': remove_units(DEFAULT_BOUNDS),
-    #     'length_unit': DEFAULT_LENGTH_UNIT,
-    #     'mass_unit': DEFAULT_MASS_UNIT,
-    #     'velocity_unit': DEFAULT_VELOCITY_UNIT,
-    #     'animate': False,
-    # }
 
     def __init__(self, config=None, core=None):
         # This means registration must be idempotent
@@ -180,8 +159,6 @@ class Multibody(Process):
 
 
     def update(self, state, interval):
-        import ipdb; ipdb.set_trace()
-
         agents = state.get('agents', {})
 
         # animate before update

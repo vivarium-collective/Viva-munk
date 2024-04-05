@@ -5,12 +5,13 @@ def REGISTER_TYPES(core):
     # core.import_types('project_we_depend_on')
 
     # Add a bounds type
-    core.register('point2d', {
-        'x': 'float',
-        'y': 'float'})
+    # core.register('point2d', {
+    #     'x': 'float',
+    #     'y': 'float'})
+    core.register('point2d', '(length|length)')
 
     core.register('boundary', {
-        'location': 'list[float]', # make this a two tuple or dict
+        'location': 'point2d',
         'diameter': 'length',
         'mass': 'mass',
         'velocity': 'length/time'})
