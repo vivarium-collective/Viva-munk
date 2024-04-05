@@ -6,6 +6,7 @@ Multibody physics process
 Simulates collisions between cell bodies with a physics engine.
 """
 
+import pytest
 import random
 import math
 import copy
@@ -14,11 +15,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-# vivarium imports
+# process-bigraph imports
 from process_bigraph import Process, Composite, ProcessTypes
 from pymunk_process.pymunk_minimal import PymunkMinimal as Pymunk
 from pymunk_process.units import units, remove_units
 from pymunk_process import REGISTER_TYPES
+from pymunk_process.plots.snapshots import plot_snapshots, format_snapshot_data
 
 
 DEFAULT_LENGTH_UNIT = units.um
@@ -110,12 +112,14 @@ class Multibody(Process):
             '_default': 1e-6,
         },
         'bounds': 'point2d',
-        'length_unit': {'_type': 'string', '_default': 'um'},
+        'length_unit': {
+            '_type': 'string',
+            '_default': 'um'
+        },
         'mass_unit': {'_type': 'string', '_default': 'ng'},
         'time_unit': {'_type': 'string', '_default': 's'},
         'animate': 'boolean',
     }
-
 
     def __init__(self, config=None, core=None):
         # This means registration must be idempotent
@@ -150,13 +154,13 @@ class Multibody(Process):
 
     def inputs(self):
         return {
-            'agents': 'map[boundary:boundary]'}
-
+            'agents': 'map[boundary:boundary]'
+        }
 
     def outputs(self):
         return {
-            'agents': 'map[boundary:boundary]'}
-
+            'agents': 'map[boundary:boundary]'
+        }
 
     def update(self, state, interval):
         agents = state.get('agents', {})
@@ -179,14 +183,21 @@ class Multibody(Process):
         # add units to cell_positions
         cell_positions = self.location_add_units(cell_positions)
 
-        return {
+        update = {
             'agents': {
                 cell_id: {
                     'boundary': {
-                        'location': list(cell_positions[cell_id])},
+                        'angle': cell_positions[cell_id]['angle'],
+                        'location': tuple([
+                            new_loc - old_loc
+                            for new_loc, old_loc in zip(
+                                cell_positions[cell_id]['location'],
+                                agents[cell_id]['boundary']['location'])])
+                    },
                 } for cell_id in agents.keys()
             }
         }
+        return update
 
     def bodies_remove_units(self, bodies):
         """Convert units to the standard, and then remove them
@@ -206,8 +217,11 @@ class Multibody(Process):
         return bodies
 
     def location_add_units(self, bodies):
-        for body_id, location in bodies.items():
-            bodies[body_id] = [(loc * self.length_unit) for loc in location]
+        for body_id, body_data in bodies.items():
+            location = body_data['location']
+            bodies[body_id] = {
+                'location': [(loc * self.length_unit) for loc in location],
+                'angle': body_data['angle']}
         return bodies
 
     def remove_length_units(self, value):
@@ -282,7 +296,15 @@ def get_agent_config(
     }
 
 
-def test_multibody(core):
+@pytest.fixture
+def core():
+    corex = ProcessTypes()
+    REGISTER_TYPES(corex)
+    corex.process_registry.register('multibody', Multibody)
+    return corex
+
+
+def run_multibody(core):
     n_agents = 10
     bounds = DEFAULT_BOUNDS
 
@@ -300,11 +322,24 @@ def test_multibody(core):
                 'agents': ['agents'],
             }
         },
-
         'agents': {
             str(i): get_agent_config(
                 bounds=bounds)
             for i in range(n_agents)
+        },
+        'emitter': {
+            '_type': 'step',
+            'address': 'local:ram-emitter',
+            'config': {
+                'emit': {
+                    'agents': 'map[boundary:boundary]',
+                    'time': 'float'
+                }
+            },
+            'inputs': {
+                'agents': ['agents'],
+                'time': ['global_time']
+            },
         }
     }
 
@@ -315,7 +350,15 @@ def test_multibody(core):
     # run the simulation
     sim.run(10)
 
-    import ipdb; ipdb.set_trace()
+    data = sim.gather_results()
+
+    agents, fields = format_snapshot_data(data[('emitter',)])
+    plot_snapshots(
+        bounds,
+        agents=agents,
+        fields=fields,
+        out_dir='out',
+    )
 
 
 if __name__ == '__main__':
@@ -323,4 +366,4 @@ if __name__ == '__main__':
     REGISTER_TYPES(core)
     core.process_registry.register('multibody', Multibody)
 
-    test_multibody(core)
+    run_multibody(core)

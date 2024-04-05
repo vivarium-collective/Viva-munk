@@ -256,7 +256,11 @@ class PymunkMinimal(object):
 
     def get_body_position(self, cell_id):
         body, shape = self.bodies[cell_id]
-        return tuple(pos for pos in body.position)
+        # return tuple(pos for pos in body.position)
+        return {
+            'location': [pos for pos in body.position],
+            'angle': body.angle,
+        }
 
     def get_body_positions(self):
         return {
