@@ -36,13 +36,13 @@ PI = math.pi
 # helper functions
 def daughter_locations(mother_location, state):
     """Given a mother's location, place daughters close"""
-    mother_diameter = state['diameter']
+    mother_length = state['length']
     mother_x = mother_location[0]
     mother_y = mother_location[1]
     locations = []
     for daughter in range(2):
-        location = [mother_x + random.gauss(0, 0.1) * mother_diameter,
-                    mother_y + random.gauss(0, 0.1) * mother_diameter]
+        location = [mother_x + random.gauss(0, 0.1) * mother_length,
+                    mother_y + random.gauss(0, 0.1) * mother_length]
         locations.append(location)
     return locations
 
@@ -209,7 +209,8 @@ class Multibody(Process):
             bodies[bodies_id]['boundary']['location'] = [loc.to(self.length_unit).magnitude for loc in
                                                          specs['boundary']['location']]
             # convert diameter
-            bodies[bodies_id]['boundary']['diameter'] = specs['boundary']['diameter'].to(self.length_unit).magnitude
+            bodies[bodies_id]['boundary']['length'] = specs['boundary']['length'].to(self.length_unit).magnitude
+            bodies[bodies_id]['boundary']['width'] = specs['boundary']['width'].to(self.length_unit).magnitude
             # convert mass
             bodies[bodies_id]['boundary']['mass'] = specs['boundary']['mass'].to(self.mass_unit).magnitude
             # convert velocity
@@ -236,10 +237,10 @@ class Multibody(Process):
             data = data['boundary']
             x_center = self.remove_length_units(data['location'][0])
             y_center = self.remove_length_units(data['location'][1])
-            diameter = self.remove_length_units(data['diameter'])
+            length = self.remove_length_units(data['length'])
 
             # get bottom left position
-            radius = (diameter / 2)
+            radius = (length / 2)
             x = x_center - radius
             y = y_center - radius
 
@@ -260,19 +261,23 @@ def get_agent_config(
         bounds=None,
         velocity=None,
         # volume=None,
-        diameter=None,
+        length=None,
+        width=None,
         mass=None,
         unit_system=None,
 ):
     unit_system = unit_system or {
         'length': DEFAULT_LENGTH_UNIT,
+        'width': DEFAULT_LENGTH_UNIT,
         'mass': DEFAULT_MASS_UNIT,
         'time': DEFAULT_TIME_UNIT,
-        'velocity': DEFAULT_LENGTH_UNIT / DEFAULT_TIME_UNIT}
+        'velocity': DEFAULT_LENGTH_UNIT / DEFAULT_TIME_UNIT,
+    }
 
-    diameter = diameter or 5 * unit_system['length']
+    length = length or 5 * unit_system['length']
+    width = width or 1.0 * unit_system['length']
     mass = mass or 5 * unit_system['mass']
-    volume = sphere_volume_from_diameter(diameter)
+    volume = sphere_volume_from_diameter(length)
     velocity = velocity or 5 * unit_system['velocity']
 
     bounds = bounds or DEFAULT_BOUNDS
@@ -288,7 +293,9 @@ def get_agent_config(
             'location': location,
             'velocity': velocity,
             'volume': volume,
-            'diameter': diameter,
+            'length': length,
+            'width': width,
+            'angle': random.uniform(0, 2 * PI),
             'mass': mass,
             'thrust': 0,
             'torque': 0,

@@ -338,18 +338,20 @@ def _remove_units_dict(dict_in):
         else:
             if isinstance(value, Quantity):
                 dict_out[key] = value.magnitude
-            elif isinstance(value, list):
-                dict_out[key] = _remove_units_list(value)
+            elif isinstance(value, (list, tuple)):
+                dict_out[key] = _remove_units_collection(value)
             else:
                 dict_out[key] = value
     return dict_out
 
-def _remove_units_list(list_in):
-    assert isinstance(list_in, list)
-    list_out = []
-    for elem in list_in:
-        if isinstance(elem, list):
-            removed = _remove_units_list(elem)
+
+def _remove_units_collection(collection_in):
+    assert isinstance(collection_in, (list, tuple)), "Input must be a list or a tuple"
+    collection_out = []
+
+    for elem in collection_in:
+        if isinstance(elem, (list, tuple)):
+            removed = _remove_units_collection(elem)
         else:
             if isinstance(elem, Quantity):
                 removed = elem.magnitude
@@ -357,14 +359,19 @@ def _remove_units_list(list_in):
                 removed = _remove_units_dict(elem)
             else:
                 removed = elem
-        list_out.append(removed)
-    return list_out
+        collection_out.append(removed)
+
+    # Return the same type as the input (list or tuple)
+    if isinstance(collection_in, tuple):
+        return tuple(collection_out)
+    else:
+        return collection_out
 
 def remove_units(collection):
     if isinstance(collection, dict):
         return _remove_units_dict(collection)
-    elif isinstance(collection, list):
-        return _remove_units_list(collection)
+    elif isinstance(collection, (list, tuple)):
+        return _remove_units_collection(collection)
     elif isinstance(collection, Quantity):
         return collection.magnitude
     return collection
@@ -448,7 +455,7 @@ def plot_snapshots(
         skip_fields=[],
         include_fields=None,
         out_dir=None,
-        filename=None,
+        filename='snapshots',
         **kwargs,
 ):
     '''Plot snapshots of the simulation over time
@@ -742,6 +749,8 @@ def make_snapshots_figure(
 
     plt.rcParams.update({'font.size': original_fontsize})
     if out_dir:
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
         fig_path = os.path.join(out_dir, filename)
         fig.subplots_adjust(wspace=0.7, hspace=0.1)
         fig.savefig(fig_path, bbox_inches='tight')

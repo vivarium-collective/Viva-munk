@@ -13,7 +13,8 @@ def REGISTER_TYPES(core):
     core.register('boundary', {
         'location': 'point2d',
         'angle': 'float',
-        'diameter': 'length',
+        'length': 'length',
+        'width': 'length',
         'mass': 'mass',
         'velocity': 'length/time'})
 

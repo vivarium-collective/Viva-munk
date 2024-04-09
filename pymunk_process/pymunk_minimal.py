@@ -9,24 +9,25 @@ PI = math.pi
 
 def random_body_position(body):
     ''' pick a random point along the boundary'''
-    diameter = body.diameter
+    length = body.diameter
     if random.randint(0, 1) == 0:
         # force along ends
         if random.randint(0, 1) == 0:
             # force on the left end
-            location = (random.uniform(0, diameter), 0)
+            location = (random.uniform(0, length), 0)
         else:
             # force on the right end
-            location = (random.uniform(0, diameter), diameter)
+            location = (random.uniform(0, length), length)
     else:
         # force along length
         if random.randint(0, 1) == 0:
             # force on the bottom end
-            location = (0, random.uniform(0, diameter))
+            location = (0, random.uniform(0, length))
         else:
             # force on the top end
-            location = (diameter, random.uniform(0, diameter))
+            location = (length, random.uniform(0, length))
     return location
+
 
 def random_direction(velocity):
     angle = random.uniform(0, 2*PI)
@@ -163,9 +164,9 @@ class PymunkMinimal(object):
         shape documentation at: https://pymunk-tutorial.readthedocs.io/en/latest/shape/shape.html
         '''
 
-        diameter = boundary['diameter']
-        half_diameter = diameter / 2
-        shape = pymunk.Circle(None, radius=half_diameter, offset=(0, 0))
+        length = boundary['length']
+        half_length = length / 2
+        shape = pymunk.Circle(None, radius=half_length, offset=(0, 0))
 
         return shape
 
@@ -178,7 +179,7 @@ class PymunkMinimal(object):
         boundary = specs['boundary']
         mass = boundary['mass']
         center_position = boundary['location']
-        diameter = boundary['diameter']
+        length = boundary['length']
 
         # get shape, inertia, make body, assign body to shape
         shape = self.get_shape(boundary)
@@ -189,7 +190,7 @@ class PymunkMinimal(object):
         body.position = (
             center_position[0],
             center_position[1])
-        body.diameter = diameter
+        body.diameter = length
 
         shape.elasticity = self.elasticity
         shape.friction = self.friction
@@ -206,7 +207,7 @@ class PymunkMinimal(object):
 
     def update_body(self, body_id, specs):
         boundary = specs['boundary']
-        diameter = boundary['diameter']
+        length = boundary['length']
         mass = boundary['mass']
 
         body, shape = self.bodies[body_id]
@@ -220,7 +221,7 @@ class PymunkMinimal(object):
 
         new_body.position = position
         new_body.velocity = body.velocity
-        new_body.diameter = diameter
+        new_body.diameter = length
 
         new_shape.elasticity = shape.elasticity
         new_shape.friction = shape.friction
@@ -284,7 +285,8 @@ def test_minimal(
             'boundary': {
                 'location': center_location,
                 'volume': 15,
-                'diameter': 30,
+                'length': 30,
+                'width': 10,
                 'mass': 1,
                 'velocity': velocity,
             }}
