@@ -155,6 +155,9 @@ class PymunkProcess(Process):
             # make sure to update the length in the agent dictionary
             self.agents[agent_id]['length'] = length
 
+        # make sure to update the agent dictionary
+        self.agents[agent_id]['mass'] = mass
+
         if new_shape:
             self.space.remove(old_shape)  # Remove old shape if necessary
 
@@ -194,6 +197,7 @@ class PymunkProcess(Process):
             'body': body,
             'shape': shape,
             'type': shape_type,
+            'mass': mass,
             'radius': radius,
             'angle': angle if shape_type == 'segment' else None,
             'length': length if shape_type == 'segment' else None,
@@ -533,7 +537,7 @@ def run_growth_division():
         interval,
         steps,
         growth_rate,
-        division_threshold=30
+        division_threshold=21
     )
 
     # make video
