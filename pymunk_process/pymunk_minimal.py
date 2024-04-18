@@ -271,7 +271,7 @@ class PymunkMinimal(object):
 
 
 def test_minimal(
-        total_time=2,
+        total_time=10,
         cell_shape='rectangle',
         velocity=10.0,  #  um / min
         n_cells=1,

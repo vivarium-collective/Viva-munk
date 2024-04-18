@@ -131,14 +131,19 @@ class PymunkProcess(Process):
 
             mass = attrs['mass']
             body.mass = mass
-            body.position = attrs['location']  #pymunk.Vec2d(*attrs['location'])  # Ensure position is a Vec2d
-            body.velocity = attrs['velocity']  #pymunk.Vec2d(*attrs['velocity'])  # Ensure velocity is a Vec2d
+            body.position = attrs['location']  # pymunk.Vec2d(*attrs['location'])  # Ensure position is a Vec2d
+            body.velocity = attrs['velocity']  # pymunk.Vec2d(*attrs['velocity'])  # Ensure velocity is a Vec2d
 
             if shape_type == 'circle':
+                # make new shape
                 radius = attrs['radius']
                 new_shape = pymunk.Circle(body, radius)
+
+                # update body
                 body.moment = pymunk.moment_for_circle(mass, 0, radius)
+
             elif shape_type == 'segment':
+                # make new shape
                 length = attrs['length']
                 radius = attrs['radius']  # Thickness of the segment
                 angle = attrs['angle']
@@ -147,15 +152,19 @@ class PymunkProcess(Process):
                 offset_start = pymunk.Vec2d(-half_length, 0).rotated(angle)
                 offset_end = pymunk.Vec2d(half_length, 0).rotated(angle)
                 new_shape = pymunk.Segment(body, offset_start, offset_end, radius)
+
+                # update body
                 body.moment = pymunk.moment_for_segment(mass, offset_start, offset_end, radius)
                 body.angle = angle
                 body.length = length
 
-            new_shape.elasticity = attrs.get('elasticity', self.config['elasticity'])
-            new_shape.friction = attrs.get('friction', self.config['friction'])
+            new_shape.elasticity = attrs.get('elasticity', 0.0)
+            new_shape.friction = attrs.get('friction', 0.0)
+
             self.space.add(new_shape)  # Add the new shape to the space
             self.agents[agent_id] = {
                 'body': body,
+                # 'shape': old_shape, #
                 'shape': new_shape,
                 'type': shape_type}
         else:
@@ -192,48 +201,10 @@ class PymunkProcess(Process):
             'body': body,
             'shape': shape,
             'type': shape_type,
-            'length': length if shape_type == 'segment' else None,
             'radius': radius,
-            'angle': angle if shape_type == 'segment' else None
+            'angle': angle if shape_type == 'segment' else None,
+            'length': length if shape_type == 'segment' else None,
         }
-
-    # def create_new_object(self, agent_id, attrs):
-    #     shape_type = attrs.get('type', 'circle')
-    #     mass = attrs['mass']
-    #     body = pymunk.Body(mass, float('inf'))  # Default to infinite moment unless set below
-    #
-    #     # set position and velocity
-    #     body.position = attrs['location']
-    #     body.velocity = attrs['velocity']
-    #
-    #     # shape-specific attributes
-    #     if shape_type == 'circle':
-    #         radius = attrs['radius']
-    #         new_shape = pymunk.Circle(body, radius)
-    #         body.moment = pymunk.moment_for_circle(mass, 0, radius)
-    #     elif shape_type == 'segment':
-    #         length = attrs['length']
-    #         radius = attrs['radius']
-    #         angle = attrs['angle']
-    #         start = pymunk.Vec2d(-length / 2, 0).rotated(angle)
-    #         end = pymunk.Vec2d(length / 2, 0).rotated(angle)
-    #         new_shape = pymunk.Segment(body, start, end, radius)
-    #         body.moment = pymunk.moment_for_segment(mass, start, end, radius)
-    #         body.angle = angle
-    #         body.length = length
-    #
-    #     new_shape.elasticity = attrs.get('elasticity', self.config['elasticity'])
-    #     new_shape.friction = attrs.get('friction', self.config['friction'])
-    #     self.space.add(body, new_shape)
-    #
-    #     self.agents[agent_id] = {
-    #         'body': body,
-    #         'shape': new_shape,
-    #         'type': shape_type,
-    #         'radius': radius,
-    #         'length': length if shape_type == 'segment' else None,
-    #         'angle': angle if shape_type == 'segment' else None
-    #     }
 
     def update(self, inputs, interval):
         self.update_bodies(inputs['agents'])
@@ -266,6 +237,7 @@ class PymunkProcess(Process):
                     'angle': obj['body'].angle
                 }
         return state
+
 
 # register process
 PYMUNK_CORE.process_registry.register('multibody', PymunkProcess)
@@ -333,11 +305,13 @@ def simulation_to_gif(data, config, filename='simulation.gif', skip_frames=1):
         # Draw agents
         for agent_id, obj in step['agents'].items():
             if obj.get('type') == 'circle':
-                circle = Circle((obj['location'][0], obj['location'][1]), obj['radius'], fill=True)
+                circle = Circle((obj['location'][0], obj['location'][1]),
+                                obj['radius'],
+                                fill=True)
                 ax.add_patch(circle)
             elif obj.get('type') == 'segment':
                 length = obj['length']
-                thickness = obj['radius'] * 2  # Visual thickness of the line
+                thickness = obj['radius'] #* 2  # Visual thickness of the line
                 angle = obj['angle']
 
                 dx = np.cos(angle) * length / 2
@@ -345,8 +319,10 @@ def simulation_to_gif(data, config, filename='simulation.gif', skip_frames=1):
                 start_point = (obj['location'][0] - dx, obj['location'][1] - dy)
                 end_point = (obj['location'][0] + dx, obj['location'][1] + dy)
 
-                line = Line2D([start_point[0], end_point[0]], [start_point[1], end_point[1]],
-                              linewidth=thickness, solid_capstyle='round', color='blue')
+                line = Line2D([start_point[0], end_point[0]],
+                              [start_point[1], end_point[1]],
+                              linewidth=thickness,
+                              solid_capstyle='round')
                 ax.add_line(line)
 
         ax.set_title(f"Time = {step['time']:.1f}")
@@ -405,17 +381,17 @@ def run_pymunk_experiment():
                 'type': 'circle',
                 'mass': 10.0,
                 'radius': 15,
-                'location': (100, 100),
+                'location': (100, 200),
                 'velocity': (0, 0),
-                'elasticity': 0.6
+                'elasticity': 0.0
             },
             '1': {
                 'type': 'circle',
                 'mass': 1.0,
                 'radius': 25,
-                'location': (100.5, 150),
+                'location': (100.5, 250),
                 'velocity': (0, 10),
-                'elasticity': 0.6
+                'elasticity': 0.0
             },
             '2': {
                 'type': 'segment',
@@ -425,33 +401,29 @@ def run_pymunk_experiment():
                 'angle': 0.785,  # Angle in radians (approximately 45 degrees)
                 'location': (300, 500),
                 'velocity': (0, 0),
-                'elasticity': 0.1
+                'elasticity': 0.0
             },
             '3': {
                 'type': 'segment',
-                'mass': 300.0,
+                'mass': 100.0,
                 'length': 80,  # Total length of the segment
                 'radius': 20,  # Thickness of the segment
                 'angle': -0.785,  # Angle in radians (approximately 45 degrees)
-                'location': (300, 400),
-                'velocity': (0, 0),
-                'elasticity': 0.1
+                'location': (400, 400),
+                'velocity': (-0.1, 0),
+                'elasticity': 0.0
             },
         }
     }
 
+    # run simulation
     interval = 0.1
-    steps = 500
-
+    steps = 600
     config = {
-        'env_size': 700,
-        'gravity': 0,
+        'env_size': 600,
+        'gravity': -9.81,
+        'elasticity': 0.1
     }
-
-    # simulation_data1 = run_composition(initial_state, config, interval, steps)
-    config['gravity'] = -0.981
-    config['elasticity'] = 1.0
-
     simulation_data2 = run_simulation(initial_state, config, interval, steps)
 
     # make video
