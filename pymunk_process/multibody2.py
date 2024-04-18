@@ -120,56 +120,6 @@ class PymunkProcess(Process):
         for agent_id, attrs in agents.items():
             self.manage_object(agent_id, attrs)
 
-    # def manage_object(self, agent_id, attrs):
-    #     shape_type = attrs.get('type', 'circle')
-    #     if agent_id in self.agents:
-    #         body = self.agents[agent_id]['body']
-    #         old_shape = self.agents[agent_id]['shape']
-    #
-    #         # TODO -- check if mass has changed, only then remove
-    #         self.space.remove(old_shape)  # Remove only the shape from the space
-    #
-    #         mass = attrs['mass']
-    #         body.mass = mass
-    #         body.position = attrs['location']  # pymunk.Vec2d(*attrs['location'])  # Ensure position is a Vec2d
-    #         body.velocity = attrs['velocity']  # pymunk.Vec2d(*attrs['velocity'])  # Ensure velocity is a Vec2d
-    #
-    #         if shape_type == 'circle':
-    #             # make new shape
-    #             radius = attrs['radius']
-    #             new_shape = pymunk.Circle(body, radius)
-    #
-    #             # update body
-    #             body.moment = pymunk.moment_for_circle(mass, 0, radius)
-    #
-    #         elif shape_type == 'segment':
-    #             # make new shape
-    #             length = attrs['length']
-    #             radius = attrs['radius']  # Thickness of the segment
-    #             angle = attrs['angle']
-    #             # Define segment relative to the body's position
-    #             half_length = length / 2
-    #             offset_start = pymunk.Vec2d(-half_length, 0).rotated(angle)
-    #             offset_end = pymunk.Vec2d(half_length, 0).rotated(angle)
-    #             new_shape = pymunk.Segment(body, offset_start, offset_end, radius)
-    #
-    #             # update body
-    #             body.moment = pymunk.moment_for_segment(mass, offset_start, offset_end, radius)
-    #             body.angle = angle
-    #             body.length = length
-    #
-    #         new_shape.elasticity = attrs.get('elasticity', 0.0)
-    #         new_shape.friction = attrs.get('friction', 0.0)
-    #
-    #         self.space.add(new_shape)  # Add the new shape to the space
-    #         self.agents[agent_id] = {
-    #             'body': body,
-    #             # 'shape': old_shape, #
-    #             'shape': new_shape,
-    #             'type': shape_type}
-    #     else:
-    #         self.create_new_object(agent_id, attrs)
-
     def manage_object(self, agent_id, attrs):
         agent = self.agents.get(agent_id)
         if not agent:
@@ -188,23 +138,26 @@ class PymunkProcess(Process):
         shape_type = attrs.get('type', 'circle')
         if shape_type == 'circle':
             radius = attrs['radius']
-            if not isinstance(old_shape, pymunk.Circle) or old_shape.radius != radius:
-                self.space.remove(old_shape)  # Remove old shape if necessary
-                new_shape = pymunk.Circle(body, radius)
-                body.moment = pymunk.moment_for_circle(mass, 0, radius)
+            new_shape = pymunk.Circle(body, radius)
+            body.moment = pymunk.moment_for_circle(mass, 0, radius)
+
         elif shape_type == 'segment':
             length = attrs['length']
             radius = attrs['radius']
             angle = attrs['angle']
-            if not isinstance(old_shape, pymunk.Segment):  # Simplified check; adjust as needed
-                self.space.remove(old_shape)
-                start = pymunk.Vec2d(-length / 2, 0).rotated(angle)
-                end = pymunk.Vec2d(length / 2, 0).rotated(angle)
-                new_shape = pymunk.Segment(body, start, end, radius)
-                body.moment = pymunk.moment_for_segment(mass, start, end, radius)
-                body.angle = angle
+            start = pymunk.Vec2d(-length / 2, 0).rotated(angle)
+            end = pymunk.Vec2d(length / 2, 0).rotated(angle)
+            new_shape = pymunk.Segment(body, start, end, radius)
+            body.moment = pymunk.moment_for_segment(mass, start, end, radius)
+            body.angle = angle
+            body.length = length
+
+            # make sure to update the length in the agent dictionary
+            self.agents[agent_id]['length'] = length
 
         if new_shape:
+            self.space.remove(old_shape)  # Remove old shape if necessary
+
             new_shape.elasticity = attrs.get('elasticity', 0.0)
             new_shape.friction = attrs.get('friction', 0.0)
             self.space.add(new_shape)  # Add new shape to the space
@@ -249,9 +202,10 @@ class PymunkProcess(Process):
     def update(self, inputs, interval):
         self.update_bodies(inputs['agents'])
         self.space.step(interval)
-        return {
+        update = {
             'agents': self.capture_state()
         }
+        return update
 
     def capture_state(self):
         state = {}
@@ -272,7 +226,7 @@ class PymunkProcess(Process):
                     'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
                     'mass': obj['body'].mass,
                     'inertia': obj['body'].moment,
-                    'length': obj['body'].length,
+                    'length': obj['length'],
                     'radius': obj['shape'].radius,
                     'angle': obj['body'].angle
                 }
@@ -299,6 +253,88 @@ def run_simulation(initial_state, config, interval, steps):
         state = new_state
 
     return timeline
+
+
+def growth_division_simulation(initial_state, config, interval, steps, growth_rate, division_threshold):
+    process = PymunkProcess(config)
+    state = dict(initial_state)  # Deep copy if nested dictionaries or complex objects in state
+
+    timeline = []
+    for step in range(steps):
+        next_state = {'agents': {}}
+        for agent_id, agent_properties in state['agents'].items():
+            # Apply growth to mass and geometrical properties
+            new_mass = agent_properties['mass'] * (1 + growth_rate)
+            agent_properties['mass'] = new_mass
+
+            if agent_properties['type'] == 'circle':
+                new_radius = agent_properties['radius'] * (1 + growth_rate)
+                agent_properties['radius'] = new_radius
+            elif agent_properties['type'] == 'segment':
+                new_length = agent_properties['length'] * (1 + growth_rate)
+                agent_properties['length'] = new_length
+
+            # Check for division
+            if new_mass > division_threshold:
+                # Adjust properties for division
+                half_mass = new_mass / 2
+                for i in [0, 1]:
+                    new_agent_id = f"{agent_id}{i}"
+                    new_agent_properties = agent_properties.copy()
+                    new_agent_properties['mass'] = half_mass
+                    if agent_properties['type'] == 'circle':
+                        new_agent_properties['radius'] = new_radius / 1.414  # Reduce radius to keep area proportional
+                    elif agent_properties['type'] == 'segment':
+                        new_agent_properties['length'] = new_length / 2  # Halve the length
+
+                    next_state['agents'][new_agent_id] = new_agent_properties
+            else:
+                # No division, just update the agent in the next state
+                next_state['agents'][agent_id] = agent_properties
+
+        # Simulate dynamics for this step
+        new_state = process.update(next_state, interval)
+
+        timeline.append({
+            'time': step * interval,
+            **new_state
+        })
+
+        # Prepare state for the next timestep
+        state = new_state
+
+    return timeline
+
+
+
+# def growth_division_simulation(initial_state, config, interval, steps, growth_rate):
+#     process = PymunkProcess(config)
+#     state = dict(initial_state)  # Make a shallow copy to avoid mutating the input directly
+#
+#     timeline = []
+#     for step in range(steps):
+#         # Apply growth before the process update
+#         for agent_id, agent_properties in state['agents'].items():
+#             state['agents'][agent_id]['mass'] *= (1 + growth_rate)
+#             if agent_properties['type'] == 'circle':
+#                 new_radius = agent_properties['radius'] * (1 + growth_rate)
+#                 state['agents'][agent_id]['radius'] = new_radius
+#             elif agent_properties['type'] == 'segment':
+#                 new_length = agent_properties['length'] * (1 + growth_rate)
+#                 state['agents'][agent_id]['length'] = new_length
+#
+#         # Simulate dynamics for this step
+#         new_state = process.update(state, interval)
+#
+#         timeline.append({
+#             'time': step * interval,
+#             **new_state
+#         })
+#
+#         # Prepare state for the next timestep
+#         state = new_state
+#
+#     return timeline
 
 
 class LineWidthData(Line2D):
@@ -470,5 +506,40 @@ def run_pymunk_experiment():
     simulation_to_gif(simulation_data2, config=config, skip_frames=10)
 
 
+def run_growth_division():
+    initial_state = {
+        'agents': {
+            'X': {
+                'type': 'segment',
+                'mass': 20.0,
+                'length': 50,  # Total length of the segment
+                'radius': 10,  # Thickness of the segment
+                'angle': 0.785,  # Angle in radians (approximately 45 degrees)
+                'location': (200, 200),
+                'velocity': (0, 0),
+                'elasticity': 0.1
+            },
+        }
+    }
+
+    interval = 1
+    steps = 1000
+    growth_rate = 0.002
+    configgr = {'env_size': 600,
+                'gravity': 0}
+    simulation_data4 = growth_division_simulation(
+        initial_state,
+        configgr,
+        interval,
+        steps,
+        growth_rate,
+        division_threshold=30
+    )
+
+    # make video
+    simulation_to_gif(simulation_data4, config=configgr, skip_frames=10, filename='growth_division.gif')
+
+
 if __name__ == '__main__':
-    run_pymunk_experiment()
+    # run_pymunk_experiment()
+    run_growth_division()
