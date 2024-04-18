@@ -21,6 +21,7 @@ from pymunk_process.pymunk_minimal import PymunkMinimal as Pymunk
 from pymunk_process.units import units, remove_units
 from pymunk_process import REGISTER_TYPES
 from pymunk_process.plots.snapshots import plot_snapshots, format_snapshot_data
+from pymunk_process.plots.snapshots_video import make_video
 
 
 DEFAULT_LENGTH_UNIT = units.um
@@ -289,6 +290,14 @@ def get_agent_config(
         location = make_random_position(bounds)
 
     return {
+        'grow': {
+            '_type': 'process',
+            'address': 'local:grow',
+            'config': {
+                'growth_rate': 0.006,
+                'default_growth_noise': 1e-3,
+            },
+        },
         'boundary': {
             'location': location,
             'velocity': velocity,
@@ -367,6 +376,18 @@ def run_multibody(core):
         out_dir='out',
     )
 
+    # make video
+    make_video(
+        data={'fields': fields,
+              'agents': agents},
+        bounds=bounds,
+        # plot_type='tag',
+        # step=step,
+        out_dir='out',
+        filename=f"snapshots",
+        # highlight_agents=highlight_agents,
+        # show_timeseries=tagged_molecules,
+    )
 
 if __name__ == '__main__':
     core = ProcessTypes()
