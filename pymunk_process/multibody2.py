@@ -120,55 +120,95 @@ class PymunkProcess(Process):
         for agent_id, attrs in agents.items():
             self.manage_object(agent_id, attrs)
 
+    # def manage_object(self, agent_id, attrs):
+    #     shape_type = attrs.get('type', 'circle')
+    #     if agent_id in self.agents:
+    #         body = self.agents[agent_id]['body']
+    #         old_shape = self.agents[agent_id]['shape']
+    #
+    #         # TODO -- check if mass has changed, only then remove
+    #         self.space.remove(old_shape)  # Remove only the shape from the space
+    #
+    #         mass = attrs['mass']
+    #         body.mass = mass
+    #         body.position = attrs['location']  # pymunk.Vec2d(*attrs['location'])  # Ensure position is a Vec2d
+    #         body.velocity = attrs['velocity']  # pymunk.Vec2d(*attrs['velocity'])  # Ensure velocity is a Vec2d
+    #
+    #         if shape_type == 'circle':
+    #             # make new shape
+    #             radius = attrs['radius']
+    #             new_shape = pymunk.Circle(body, radius)
+    #
+    #             # update body
+    #             body.moment = pymunk.moment_for_circle(mass, 0, radius)
+    #
+    #         elif shape_type == 'segment':
+    #             # make new shape
+    #             length = attrs['length']
+    #             radius = attrs['radius']  # Thickness of the segment
+    #             angle = attrs['angle']
+    #             # Define segment relative to the body's position
+    #             half_length = length / 2
+    #             offset_start = pymunk.Vec2d(-half_length, 0).rotated(angle)
+    #             offset_end = pymunk.Vec2d(half_length, 0).rotated(angle)
+    #             new_shape = pymunk.Segment(body, offset_start, offset_end, radius)
+    #
+    #             # update body
+    #             body.moment = pymunk.moment_for_segment(mass, offset_start, offset_end, radius)
+    #             body.angle = angle
+    #             body.length = length
+    #
+    #         new_shape.elasticity = attrs.get('elasticity', 0.0)
+    #         new_shape.friction = attrs.get('friction', 0.0)
+    #
+    #         self.space.add(new_shape)  # Add the new shape to the space
+    #         self.agents[agent_id] = {
+    #             'body': body,
+    #             # 'shape': old_shape, #
+    #             'shape': new_shape,
+    #             'type': shape_type}
+    #     else:
+    #         self.create_new_object(agent_id, attrs)
+
     def manage_object(self, agent_id, attrs):
+        agent = self.agents.get(agent_id)
+        if not agent:
+            self.create_new_object(agent_id, attrs)
+            return
+
+        body = agent['body']
+        old_shape = agent['shape']
+        new_shape = None  # Initialize new_shape to None
+
+        mass = attrs['mass']
+        body.mass = mass
+        body.position = pymunk.Vec2d(*attrs['location'])
+        body.velocity = pymunk.Vec2d(*attrs['velocity'])
+
         shape_type = attrs.get('type', 'circle')
-        if agent_id in self.agents:
-            body = self.agents[agent_id]['body']
-            old_shape = self.agents[agent_id]['shape']
-
-            # TODO -- check if mass has changed, only then remove
-            self.space.remove(old_shape)  # Remove only the shape from the space
-
-            mass = attrs['mass']
-            body.mass = mass
-            body.position = attrs['location']  # pymunk.Vec2d(*attrs['location'])  # Ensure position is a Vec2d
-            body.velocity = attrs['velocity']  # pymunk.Vec2d(*attrs['velocity'])  # Ensure velocity is a Vec2d
-
-            if shape_type == 'circle':
-                # make new shape
-                radius = attrs['radius']
+        if shape_type == 'circle':
+            radius = attrs['radius']
+            if not isinstance(old_shape, pymunk.Circle) or old_shape.radius != radius:
+                self.space.remove(old_shape)  # Remove old shape if necessary
                 new_shape = pymunk.Circle(body, radius)
-
-                # update body
                 body.moment = pymunk.moment_for_circle(mass, 0, radius)
-
-            elif shape_type == 'segment':
-                # make new shape
-                length = attrs['length']
-                radius = attrs['radius']  # Thickness of the segment
-                angle = attrs['angle']
-                # Define segment relative to the body's position
-                half_length = length / 2
-                offset_start = pymunk.Vec2d(-half_length, 0).rotated(angle)
-                offset_end = pymunk.Vec2d(half_length, 0).rotated(angle)
-                new_shape = pymunk.Segment(body, offset_start, offset_end, radius)
-
-                # update body
-                body.moment = pymunk.moment_for_segment(mass, offset_start, offset_end, radius)
+        elif shape_type == 'segment':
+            length = attrs['length']
+            radius = attrs['radius']
+            angle = attrs['angle']
+            if not isinstance(old_shape, pymunk.Segment):  # Simplified check; adjust as needed
+                self.space.remove(old_shape)
+                start = pymunk.Vec2d(-length / 2, 0).rotated(angle)
+                end = pymunk.Vec2d(length / 2, 0).rotated(angle)
+                new_shape = pymunk.Segment(body, start, end, radius)
+                body.moment = pymunk.moment_for_segment(mass, start, end, radius)
                 body.angle = angle
-                body.length = length
 
+        if new_shape:
             new_shape.elasticity = attrs.get('elasticity', 0.0)
             new_shape.friction = attrs.get('friction', 0.0)
-
-            self.space.add(new_shape)  # Add the new shape to the space
-            self.agents[agent_id] = {
-                'body': body,
-                # 'shape': old_shape, #
-                'shape': new_shape,
-                'type': shape_type}
-        else:
-            self.create_new_object(agent_id, attrs)
+            self.space.add(new_shape)  # Add new shape to the space
+            agent['shape'] = new_shape
 
     def create_new_object(self, agent_id, attrs):
         shape_type = attrs.get('type', 'circle')
