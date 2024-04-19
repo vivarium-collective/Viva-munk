@@ -98,12 +98,12 @@ class PymunkProcess(Process):
 
     def inputs(self):
         return {
-            'agents': 'any'
+            'agents': 'map[circle_agent]'
         }
 
     def outputs(self):
         return {
-            'agents': 'any'
+            'agents': 'map[circle_agent]'
         }
 
     def update_bodies(self, agents):
@@ -236,6 +236,27 @@ class PymunkProcess(Process):
                 }
         return state
 
+
+# register types
+circle_agent_type = {
+    'type': 'string',  # TODO this should be 'enum[circle, segment]'
+    'mass': 'float',
+    'radius': 'float',
+    'inertia': {'_type': 'float',
+                '_default': float('inf')
+                },
+    'location': ('float', 'float'),
+    'velocity': ('float', 'float'),
+    'elasticity': 'float'
+}
+segment_agent_type = {
+    '_inherit': 'circle_agent',
+    'length': 'float',
+    'angle': 'float',
+}
+
+PYMUNK_CORE.register('circle_agent', circle_agent_type)
+PYMUNK_CORE.register('segment_agent', segment_agent_type)
 
 # register process
 PYMUNK_CORE.process_registry.register('multibody', PymunkProcess)
@@ -544,6 +565,75 @@ def run_growth_division():
     simulation_to_gif(simulation_data4, config=configgr, skip_frames=10, filename='growth_division.gif')
 
 
+def run_composition(initial_state, config, interval, steps):
+    sim_state = {
+        'multibody': {
+            '_type': 'process',
+            'interval': interval,
+            'address': 'local:multibody',
+            'config': config,
+            'inputs': {
+                'agents': ['agents'],
+            },
+            'outputs': {
+                'agents': ['agents'],
+            }
+        },
+        'emitter': {
+            '_type': 'step',
+            'address': 'local:ram-emitter',
+            'config': {
+                'emit': {
+                    'agents': 'any',
+                    'time': 'float'
+                }
+            },
+            'inputs': {
+                'agents': ['agents'],
+                'time': ['global_time']
+            },
+        }
+    }
+    sim_state.update(initial_state)
+
+    # make the composite
+    sim = Composite(
+        {'state': sim_state},
+        core=PYMUNK_CORE
+    )
+
+    # run the simulation
+    total_time = interval * steps
+    sim.run(total_time)
+    data = sim.gather_results()
+    return data
+
+
+def run_composition_experiment():
+    initial_state = {
+        'agents': {
+            'X': {
+                'type': 'segment',
+                'mass': 20.0,
+                'length': 50,  # Total length of the segment
+                'radius': 10,  # Thickness of the segment
+                'angle': 0.785,  # Angle in radians (approximately 45 degrees)
+                'location': (200, 200),
+                'velocity': (0, 0),
+                'elasticity': 0.1
+            },
+        }
+    }
+
+    interval = 0.1
+    steps = 1000
+    # growth_rate = 0.002
+    config = {'env_size': 600,'gravity': 0}
+    run_composition(initial_state, config, interval, steps)
+
+
+
 if __name__ == '__main__':
     # run_pymunk_experiment()
-    run_growth_division()
+    # run_growth_division()
+    run_composition_experiment()
