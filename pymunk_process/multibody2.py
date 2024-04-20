@@ -4,13 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import imageio.v2 as imageio
-from IPython.display import Image, display
 from matplotlib.patches import Circle
-import base64
-from io import BytesIO
 import pymunk
 
-from process_bigraph import Step, Process, Composite, ProcessTypes
+from process_bigraph import Process, Composite, ProcessTypes
 
 
 # make core
@@ -582,6 +579,7 @@ def run_composition_experiment():
     initial_state = {
         'agents': {
             'X': {
+                '_type': 'segment_agent',
                 'type': 'segment',
                 'mass': 20.0,
                 'length': 50,  # Total length of the segment
@@ -597,7 +595,7 @@ def run_composition_experiment():
     interval = 0.1
     steps = 1000
     # growth_rate = 0.002
-    config = {'env_size': 600,'gravity': 0}
+    config = {'env_size': 600, 'gravity': 0}
     run_composition(initial_state, config, interval, steps)
 
 
