@@ -331,37 +331,6 @@ def growth_division_simulation(initial_state, config, interval, steps, growth_ra
     return timeline
 
 
-
-# def growth_division_simulation(initial_state, config, interval, steps, growth_rate):
-#     process = PymunkProcess(config)
-#     state = dict(initial_state)  # Make a shallow copy to avoid mutating the input directly
-#
-#     timeline = []
-#     for step in range(steps):
-#         # Apply growth before the process update
-#         for agent_id, agent_properties in state['agents'].items():
-#             state['agents'][agent_id]['mass'] *= (1 + growth_rate)
-#             if agent_properties['type'] == 'circle':
-#                 new_radius = agent_properties['radius'] * (1 + growth_rate)
-#                 state['agents'][agent_id]['radius'] = new_radius
-#             elif agent_properties['type'] == 'segment':
-#                 new_length = agent_properties['length'] * (1 + growth_rate)
-#                 state['agents'][agent_id]['length'] = new_length
-#
-#         # Simulate dynamics for this step
-#         new_state = process.update(state, interval)
-#
-#         timeline.append({
-#             'time': step * interval,
-#             **new_state
-#         })
-#
-#         # Prepare state for the next timestep
-#         state = new_state
-#
-#     return timeline
-
-
 class LineWidthData(Line2D):
     def __init__(self, *args, **kwargs):
         _lw_data = kwargs.pop('linewidth', 1)
