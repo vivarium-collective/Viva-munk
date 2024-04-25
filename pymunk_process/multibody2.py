@@ -103,13 +103,71 @@ class PymunkProcess(Process):
             'agents': 'map[circle_agent]'
         }
 
+    def update(self, inputs, interval):
+        self.update_bodies(inputs['agents'])
+
+
+        # TODO -- apply impulse to the bodies
+        # apply impulse in attempt to move the bodies
+        for body in self.space.bodies:
+            # Apply a small initial force to separate them
+            # Generate random components for the impulse vector
+            magnitude = 1
+            angle = random.uniform(0, 2 * np.pi)  # Random angle in radians
+            x_impulse = magnitude * np.cos(angle)
+            y_impulse = magnitude * np.sin(angle)
+
+            # Apply the impulse at the center of mass of the body
+            body.apply_impulse_at_local_point((x_impulse, y_impulse))
+            # body.apply_impulse_at_local_point((impulse_magnitude, 0))
+
+
+
+        n_steps = 100
+        dt = interval / n_steps
+        for _ in range(n_steps):
+            self.space.step(dt)
+        update = {
+            'agents': self.capture_state()
+        }
+
+
+
+
+        for body in self.space.bodies:
+            print("Body ID:", id(body))
+            print("Position:", body.position)
+            print("Velocity:", body.velocity)
+            print("Mass:", body.mass)
+            print("Angle:", body.angle)
+
+        print("\n")
+        for shape in self.space.shapes:
+            if shape.body.body_type == pymunk.Body.STATIC:
+                continue
+
+            print("Shape Type:", type(shape))
+            print("Body Position:", shape.body.position)  # Position is stored in the body, not the shape
+            if isinstance(shape, pymunk.Segment):
+                print("Segment Start:", shape.a)
+                print("Segment End:", shape.b)
+                print("Thickness:", shape.radius)
+
+        print(inputs['agents'].keys())
+        if len(inputs['agents']) > 1:
+            x=1
+            pass
+
+        return update
+
     def update_bodies(self, agents):
         existing_ids = set(self.agents.keys())
         new_ids = set(agents.keys())
 
         # Remove objects not in the new state
         for agent_id in existing_ids - new_ids:
-            body, shape = self.agents[agent_id]['body'], self.agents[agent_id]['shape']
+            body = self.agents[agent_id]['body']
+            shape = self.agents[agent_id]['shape']
             self.space.remove(body, shape)
             del self.agents[agent_id]
 
@@ -127,6 +185,7 @@ class PymunkProcess(Process):
         old_shape = agent['shape']
         new_shape = None  # Initialize new_shape to None
 
+        # TODO -- make a new body???
         mass = attrs['mass']
         body.mass = mass
         body.position = pymunk.Vec2d(*attrs['location'])
@@ -156,11 +215,11 @@ class PymunkProcess(Process):
         self.agents[agent_id]['mass'] = mass
 
         if new_shape:
-            self.space.remove(old_shape)  # Remove old shape if necessary
+            self.space.remove(body, old_shape)  # Remove old shape if necessary
 
-            new_shape.elasticity = attrs.get('elasticity', 0.0)
-            new_shape.friction = attrs.get('friction', 0.0)
-            self.space.add(new_shape)  # Add new shape to the space
+            new_shape.elasticity = attrs.get('elasticity', self.config['elasticity'])  # TODO -- this elasticity and friction is the same as the walls...
+            new_shape.friction = attrs.get('friction', self.config['friction'])
+            self.space.add(body, new_shape)  # Add new shape to the space
             agent['shape'] = new_shape
 
     def create_new_object(self, agent_id, attrs):
@@ -178,8 +237,8 @@ class PymunkProcess(Process):
             length = attrs['length']
             radius = attrs['radius']  # this is the thickness of the segment
             angle = attrs['angle']
-            start = pymunk.Vec2d(-length / 2, 0)
-            end = pymunk.Vec2d(length / 2, 0)
+            start = (-length / 2, 0)
+            end = (length / 2, 0)
             inertia = pymunk.moment_for_segment(mass, start, end, radius)  # correct inertia for segments
             body = pymunk.Body(mass, inertia)
             body.position = attrs['location']
@@ -187,7 +246,7 @@ class PymunkProcess(Process):
             body.length = length
             shape = pymunk.Segment(body, start, end, radius)
 
-        shape.elasticity = attrs.get('elasticity', self.config['elasticity'])
+        shape.elasticity = attrs.get('elasticity', self.config['elasticity'])  # TODO -- this elasticity and friction is the same as the walls...
         shape.friction = attrs.get('friction', self.config['friction'])
         self.space.add(body, shape)
         self.agents[agent_id] = {
@@ -199,14 +258,6 @@ class PymunkProcess(Process):
             'angle': angle if shape_type == 'segment' else None,
             'length': length if shape_type == 'segment' else None,
         }
-
-    def update(self, inputs, interval):
-        self.update_bodies(inputs['agents'])
-        self.space.step(interval)
-        update = {
-            'agents': self.capture_state()
-        }
-        return update
 
     def capture_state(self):
         state = {}
@@ -277,7 +328,14 @@ def run_simulation(initial_state, config, interval, steps):
     return timeline
 
 
-def growth_division_simulation(initial_state, config, interval, steps, growth_rate, division_threshold):
+def growth_division_simulation(
+        initial_state,
+        config,
+        interval,
+        steps,
+        growth_rate,
+        division_threshold,
+):
     process = PymunkProcess(config)
     state = dict(initial_state)  # Deep copy if nested dictionaries or complex objects in state
 
@@ -501,6 +559,7 @@ def run_growth_division():
     initial_state = {
         'agents': {
             'X': {
+                '_type': 'segment_agent',
                 'type': 'segment',
                 'mass': 20.0,
                 'length': 50,  # Total length of the segment
@@ -528,7 +587,11 @@ def run_growth_division():
     )
 
     # make video
-    simulation_to_gif(simulation_data4, config=configgr, skip_frames=10, filename='growth_division.gif')
+    simulation_to_gif(
+        simulation_data4,
+        config=configgr,
+        skip_frames=10,
+        filename='out/growth_division.gif')
 
 
 def run_composition(initial_state, config, interval, steps):
@@ -602,5 +665,5 @@ def run_composition_experiment():
 
 if __name__ == '__main__':
     # run_pymunk_experiment()
-    # run_growth_division()
-    run_composition_experiment()
+    run_growth_division()
+    # run_composition_experiment()
