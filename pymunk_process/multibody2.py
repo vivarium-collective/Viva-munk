@@ -14,6 +14,26 @@ from process_bigraph import Process, Composite, ProcessTypes
 PYMUNK_CORE = ProcessTypes()
 
 
+def random_body_position(body):
+    ''' Pick a random point along the boundary of the body (rectangle) '''
+    length = body.length
+    width = body.width
+    edge = random.choice(['left', 'right', 'bottom', 'top'])
+
+    if edge == 'left':
+        # Random point along the left vertical edge
+        return (0, random.uniform(0, length))
+    elif edge == 'right':
+        # Random point along the right vertical edge
+        return (width, random.uniform(0, length))
+    elif edge == 'bottom':
+        # Random point along the bottom horizontal edge
+        return (random.uniform(0, width), 0)
+    elif edge == 'top':
+        # Random point along the top horizontal edge
+        return (random.uniform(0, width), length)
+
+
 class PymunkProcess(Process):
     config_schema = {
         'env_size': {
@@ -35,6 +55,10 @@ class PymunkProcess(Process):
         'elasticity': {
             '_type': 'float',
             '_default': 0
+        },
+        'jitter_force': {
+            '_type': 'float',
+            '_default': 1e-2
         },
         'barriers': 'list[map]',
     }
@@ -106,52 +130,36 @@ class PymunkProcess(Process):
     def update(self, inputs, interval):
         self.update_bodies(inputs['agents'])
 
-
-        # TODO -- apply impulse to the bodies
-        # apply impulse in attempt to move the bodies
-        for body in self.space.bodies:
-            # Apply a small initial force to separate them
-            # Generate random components for the impulse vector
-            magnitude = 1
-            angle = random.uniform(0, 2 * np.pi)  # Random angle in radians
-            x_impulse = magnitude * np.cos(angle)
-            y_impulse = magnitude * np.sin(angle)
-
-            # Apply the impulse at the center of mass of the body
-            body.apply_impulse_at_local_point((x_impulse, y_impulse))
-            # body.apply_impulse_at_local_point((impulse_magnitude, 0))
-
-
-
         n_steps = 100
         dt = interval / n_steps
         for _ in range(n_steps):
+            # apply forces
+            for body in self.space.bodies:
+                self.apply_jitter_force(body)
             self.space.step(dt)
+
         update = {
             'agents': self.capture_state()
         }
-
-
-
-
-        for body in self.space.bodies:
-            print("Body ID:", id(body))
-            print("Position:", body.position)
-            print("Velocity:", body.velocity)
-            print("Mass:", body.mass)
-            print("Angle:", body.angle)
-
-        print("\n")
-        for shape in self.space.shapes:
-            if shape.body.body_type == pymunk.Body.STATIC:
-                continue
-
-            print("Shape Type:", type(shape))
-            print("Body Position:", shape.body.position)  # Position is stored in the body, not the shape
-            if isinstance(shape, pymunk.Segment):
-                print("Segment Start:", shape.a)
-                print("Segment End:", shape.b)
-                print("Thickness:", shape.radius)
+        #
+        # for body in self.space.bodies:
+        #     print("Body ID:", id(body))
+        #     print("Position:", body.position)
+        #     print("Velocity:", body.velocity)
+        #     print("Mass:", body.mass)
+        #     print("Angle:", body.angle)
+        #
+        # print("\n")
+        # for shape in self.space.shapes:
+        #     if shape.body.body_type == pymunk.Body.STATIC:
+        #         continue
+        #
+        #     print("Shape Type:", type(shape))
+        #     print("Body Position:", shape.body.position)  # Position is stored in the body, not the shape
+        #     if isinstance(shape, pymunk.Segment):
+        #         print("Segment Start:", shape.a)
+        #         print("Segment End:", shape.b)
+        #         print("Thickness:", shape.radius)
 
         print(inputs['agents'].keys())
         if len(inputs['agents']) > 1:
@@ -159,6 +167,15 @@ class PymunkProcess(Process):
             pass
 
         return update
+
+    def apply_jitter_force(self, body):
+        jitter_location = random_body_position(body)
+        jitter_force = [
+            random.normalvariate(0, self.config['jitter_force']),
+            random.normalvariate(0, self.config['jitter_force'])]
+        body.apply_impulse_at_local_point(
+            jitter_force,
+            jitter_location)
 
     def update_bodies(self, agents):
         existing_ids = set(self.agents.keys())
@@ -207,6 +224,7 @@ class PymunkProcess(Process):
             body.moment = pymunk.moment_for_segment(mass, start, end, radius)
             body.angle = angle
             body.length = length
+            body.width = radius * 2
 
             # make sure to update the length in the agent dictionary
             self.agents[agent_id]['length'] = length
@@ -244,6 +262,7 @@ class PymunkProcess(Process):
             body.position = attrs['location']
             body.angle = angle
             body.length = length
+            body.width = radius * 2
             shape = pymunk.Segment(body, start, end, radius)
 
         shape.elasticity = attrs.get('elasticity', self.config['elasticity'])  # TODO -- this elasticity and friction is the same as the walls...
