@@ -1,10 +1,12 @@
-import random
 import os
+import random
+import math
 import numpy as np
+import imageio.v2 as imageio
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-import imageio.v2 as imageio
 from matplotlib.patches import Circle
+
 import pymunk
 
 from process_bigraph import Process, Composite, ProcessTypes
@@ -32,6 +34,23 @@ def random_body_position(body):
     elif edge == 'top':
         # Random point along the top horizontal edge
         return (random.uniform(0, width), length)
+
+
+def daughter_locations(parent_state):
+    parent_length = parent_state['length']
+    parent_angle = parent_state['angle']
+    parent_location = parent_state['location']
+    pos_ratios = [-0.35, 0.35]  #[-0.25, 0.25]
+    daughter_locations = []
+    for daughter in range(2):
+        dx = parent_length * pos_ratios[daughter] * math.cos(parent_angle)
+        dy = parent_length * pos_ratios[daughter] * math.sin(parent_angle)
+        location = [parent_location[0] + dx, parent_location[1] + dy]
+        daughter_locations.append(location)
+    return daughter_locations
+
+
+
 
 
 class PymunkProcess(Process):
@@ -161,10 +180,10 @@ class PymunkProcess(Process):
         #         print("Segment End:", shape.b)
         #         print("Thickness:", shape.radius)
 
-        print(inputs['agents'].keys())
-        if len(inputs['agents']) > 1:
-            x=1
-            pass
+        # print(inputs['agents'].keys())
+        # if len(inputs['agents']) > 1:
+        #     x=1
+        #     pass
 
         return update
 
@@ -377,9 +396,13 @@ def growth_division_simulation(
             if new_mass > division_threshold:
                 # Adjust properties for division
                 half_mass = new_mass / 2
+                new_locations = daughter_locations(agent_properties)
+
                 for i in [0, 1]:
                     new_agent_id = f"{agent_id}{i}"
                     new_agent_properties = agent_properties.copy()
+
+                    new_agent_properties['location'] = new_locations[i]
                     new_agent_properties['mass'] = half_mass
                     if agent_properties['type'] == 'circle':
                         new_agent_properties['radius'] = new_radius / 1.414  # Reduce radius to keep area proportional
