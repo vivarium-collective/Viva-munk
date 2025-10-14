@@ -45,7 +45,9 @@ def simulation_to_gif(data, config, filename='simulation.gif', skip_frames=1):
             start_x, start_y = barrier['start']
             end_x, end_y = barrier['end']
             thickness = barrier.get('thickness', 1)  # Default thickness
-            barrier_line = Line2D([start_x, end_x], [start_y, end_y], linewidth=thickness, color='gray')
+            # Draw barriers (thickness in world units)
+            barrier_line = LineWidthData([start_x, end_x], [start_y, end_y],
+                                         linewidth=thickness, color='gray')
             ax.add_line(barrier_line)
 
         # Draw agents
@@ -56,8 +58,9 @@ def simulation_to_gif(data, config, filename='simulation.gif', skip_frames=1):
                                 fill=True)
                 ax.add_patch(circle)
             elif obj.get('type') == 'segment':
+                # Draw segment agents with capsule thickness = 2*radius (world units)
                 length = obj['length']
-                thickness = obj['radius'] #* 2  # Visual thickness of the line
+                r = obj['radius']
                 angle = obj['angle']
 
                 dx = np.cos(angle) * length / 2
@@ -65,10 +68,10 @@ def simulation_to_gif(data, config, filename='simulation.gif', skip_frames=1):
                 start_point = (obj['location'][0] - dx, obj['location'][1] - dy)
                 end_point = (obj['location'][0] + dx, obj['location'][1] + dy)
 
-                line = Line2D([start_point[0], end_point[0]],
-                              [start_point[1], end_point[1]],
-                              linewidth=thickness,
-                              solid_capstyle='round')
+                line = LineWidthData([start_point[0], end_point[0]],
+                                     [start_point[1], end_point[1]],
+                                     linewidth=2 * r,  # diameter in world units
+                                     solid_capstyle='round')
                 ax.add_line(line)
 
         ax.set_title(f"Time = {step['time']:.1f}")

@@ -4,6 +4,7 @@ Tests for pymunk multibody simulations, including growth and division.
 import numpy as np
 import copy
 import random
+import math
 
 from process_bigraph import Composite, gather_emitter_results
 from pymunk_process import get_pymunk_core, PymunkProcess
