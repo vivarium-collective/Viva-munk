@@ -7,37 +7,12 @@ import random
 import math
 
 from process_bigraph import Composite, gather_emitter_results
+from process_bigraph.emitter import emitter_from_wires
 from pymunk_process import get_pymunk_core, PymunkProcess
 from pymunk_process.processes.multibody import daughter_locations
 from pymunk_process.plots.multibody_plots import simulation_to_gif
 
 PYMUNK_CORE = get_pymunk_core()
-
-
-def run_simulation(initial_state, config, interval, steps):
-    # doc = {
-    #     'multibody': {
-    #         'address': 'local:pymunk_process',
-    #     }
-    # }
-
-
-
-    process = PymunkProcess(config, core=PYMUNK_CORE)
-    state = initial_state
-
-    timeline = []
-    for step in range(steps):
-        new_state = process.update(state, interval)
-        timeline.append({
-            'time': step * interval,
-            **new_state
-        })
-
-        # update the state
-        state = new_state
-
-    return timeline
 
 
 def growth_division_simulation(
@@ -203,10 +178,39 @@ def run_pymunk_experiment():
         'gravity': -9.81,
         'elasticity': 0.1,
     }
-    simulation_data2 = run_simulation(initial_state, config, interval, steps)
+
+    processes = {
+        'multibody': {
+            "_type": "process",
+            'address': 'local:pymunk_process',
+            "config": config,
+            "inputs": {
+                "agents": ['cells'],
+            },
+            "outputs": {
+                "agents": ['cells'],
+            }
+        }
+    }
+
+    # emitter state
+    emitter_spec = {key: [key] for key in ['agents']}
+    emitter_state = emitter_from_wires(emitter_spec)
+
+    doc = {
+        **initial_state,
+        **processes,
+        **emitter_state,
+    }
+
+    sim = Composite(doc, core=PYMUNK_CORE)
+    total_time = interval * steps
+    sim.run(total_time)
+    results = gather_emitter_results(sim)
+
 
     # make video
-    simulation_to_gif(simulation_data2, filename='circlesandsegments', config=config, skip_frames=10)
+    simulation_to_gif(results, filename='circlesandsegments', config=config, skip_frames=10)
 
 
 def run_growth_division():
@@ -328,6 +332,6 @@ def run_composition_experiment():
 
 
 if __name__ == '__main__':
-    # run_pymunk_experiment()
-    run_growth_division()
+    run_pymunk_experiment()
+    # run_growth_division()
     # run_composition_experiment()
