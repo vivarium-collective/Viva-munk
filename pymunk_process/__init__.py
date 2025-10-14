@@ -1,29 +1,49 @@
-# from bigraph_schema import import_types
+"""
+Registration-related functions
+"""
+
+from process_bigraph import ProcessTypes
+from pymunk_process.processes.multibody import PymunkProcess
+from pymunk_process.processes.grow_divide import GrowDivide
 
 
-def REGISTER_TYPES(core):
-    # core.import_types('project_we_depend_on')
-
-    # Add a bounds type
-    # core.register('point2d', {
-    #     'x': 'float',
-    #     'y': 'float'})
+def register_types(core):
     core.register('point2d', '(length|length)')
+    core.register('boundary', {'location': 'point2d',
+                               'angle': 'float',
+                               'length': 'length',
+                               'width': 'length',
+                               'mass': 'mass',
+                               'velocity': 'length/time'})
 
-    core.register('boundary', {
-        'location': 'point2d',
+    circle_agent_type = {
+        'type': 'string',  # TODO this should be 'enum[circle, segment]'
+        'mass': 'float',
+        'radius': 'float',
+        'inertia': {'_type': 'float',
+                    '_default': float('inf')
+                    },
+        'location': ('float', 'float'),
+        'velocity': ('float', 'float'),
+        'elasticity': 'float'
+    }
+    segment_agent_type = {
+        '_inherit': 'circle_agent',
+        'length': 'float',
         'angle': 'float',
-        'length': 'length',
-        'width': 'length',
-        'mass': 'mass',
-        'velocity': 'length/time'})
+    }
+
+    core.register('circle_agent', circle_agent_type)
+    core.register('segment_agent', segment_agent_type)
 
 
-# def REGISTER_TYPES(core):
-#     core.import_types('pymunk_process')
+def register_processes(core):
+    core.process_registry.register('pymunk', PymunkProcess)
+    core.process_registry.register('grow_divide', GrowDivide)
 
 
-# class TypeSystem():
-#     def import_types(self, package_name):
-#         register = getattr(module_lookup(f'{package_name}.REGISTER_TYPES'))
-#         register(self)
+def get_pymunk_core(config=None):
+    core = ProcessTypes()
+    register_types(core)
+    register_processes(core)
+    return core
