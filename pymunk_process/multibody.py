@@ -1,4 +1,9 @@
+"""
+TODO: use an actual grow/divide process for demo
+"""
+
 import os
+import copy
 import random
 import math
 import numpy as np
@@ -9,7 +14,7 @@ from matplotlib.patches import Circle
 
 import pymunk
 
-from process_bigraph import Process, Composite, ProcessTypes
+from process_bigraph import Process, Composite, ProcessTypes, gather_emitter_results
 
 
 # make core
@@ -48,7 +53,6 @@ def daughter_locations(parent_state):
         location = [parent_location[0] + dx, parent_location[1] + dy]
         daughter_locations.append(location)
     return daughter_locations
-
 
 
 class PymunkProcess(Process):
@@ -371,48 +375,89 @@ def growth_division_simulation(
         steps,
         growth_rate,
         division_threshold,
+        *,
+        threshold_noise_std=0.0,          # 0 = no noise
+        threshold_noise_mode='relative',   # 'relative' or 'absolute'
+        seed=None                          # for reproducibility
 ):
+    """
+    Simulate growth and division with a noisy division threshold.
+
+    Parameters
+    ----------
+    division_threshold : float
+        Base mass threshold for division.
+    threshold_noise_std : float, optional
+        Std dev of Gaussian noise applied to the threshold at each agent check.
+        - If mode='relative', effective_threshold = threshold * (1 + N(0, std))
+        - If mode='absolute', effective_threshold = threshold + N(0, std)
+    threshold_noise_mode : {'relative', 'absolute'}, optional
+        How to apply noise to the threshold.
+    seed : int or None
+        RNG seed for reproducibility.
+
+    Notes
+    -----
+    - Noise is sampled independently *each timestep per agent*.
+    - Effective threshold is clamped to > 0.
+    """
+    rng_np = np.random.default_rng(seed)
+    if seed is not None:
+        random.seed(seed)
+
     process = PymunkProcess(config, core=PYMUNK_CORE)
-    state = dict(initial_state)  # Deep copy if nested dictionaries or complex objects in state
+    state = copy.deepcopy(initial_state)
+
+    def noisy_threshold(base):
+        if threshold_noise_std <= 0:
+            return base
+        if threshold_noise_mode == 'relative':
+            eff = base * (1.0 + rng_np.normal(0.0, threshold_noise_std))
+        elif threshold_noise_mode == 'absolute':
+            eff = base + rng_np.normal(0.0, threshold_noise_std)
+        else:
+            raise ValueError("threshold_noise_mode must be 'relative' or 'absolute'")
+        return max(eff, 1e-12)
 
     timeline = []
     for step in range(steps):
         next_state = {'agents': {}}
-        for agent_id, agent_properties in state['agents'].items():
-            # Apply growth to mass and geometrical properties
-            new_mass = agent_properties['mass'] * (1 + growth_rate)
-            agent_properties['mass'] = new_mass
 
-            if agent_properties['type'] == 'circle':
-                new_radius = agent_properties['radius'] * (1 + growth_rate)
-                agent_properties['radius'] = new_radius
-            elif agent_properties['type'] == 'segment':
-                new_length = agent_properties['length'] * (1 + growth_rate)
-                agent_properties['length'] = new_length
+        for agent_id, agent in state['agents'].items():
+            a = copy.deepcopy(agent)
 
-            # Check for division
-            if new_mass > division_threshold:
-                # Adjust properties for division
-                half_mass = new_mass / 2
-                new_locations = daughter_locations(agent_properties)
+            # growth
+            a['mass'] = a['mass'] * (1 + growth_rate)
+            if a['type'] == 'circle':
+                a['radius'] = a['radius'] * (1 + growth_rate)
+            elif a['type'] == 'segment':
+                a['length'] = a['length'] * (1 + growth_rate)
 
-                for i in [0, 1]:
-                    new_agent_id = f"{agent_id}{i}"
-                    new_agent_properties = agent_properties.copy()
+            # noisy threshold for this agent at this step
+            eff_threshold = noisy_threshold(division_threshold)
 
-                    new_agent_properties['location'] = new_locations[i]
-                    new_agent_properties['mass'] = half_mass
-                    if agent_properties['type'] == 'circle':
-                        new_agent_properties['radius'] = new_radius / 1.414  # Reduce radius to keep area proportional
-                    elif agent_properties['type'] == 'segment':
-                        new_agent_properties['length'] = new_length / 2  # Halve the length
+            # division check
+            if a['mass'] > eff_threshold:
+                half_mass = a['mass'] / 2
+                locs = daughter_locations(a)  # your helper
 
-                    next_state['agents'][new_agent_id] = new_agent_properties
+                for i in (0, 1):
+                    na = copy.deepcopy(a)
+                    na['location'] = locs[i]
+                    na['mass'] = half_mass
+                    if na['type'] == 'circle':
+                        # keep area proportional: r -> r / sqrt(2)
+                        na['radius'] = na['radius'] / math.sqrt(2)
+                    elif na['type'] == 'segment':
+                        na['length'] = na['length'] / 2
+                        # tiny angular jitter to avoid perfect overlaps (optional)
+                        na['angle'] = na.get('angle', 0.0) + rng_np.normal(0.0, 0.02)
+
+                    next_state['agents'][f"{agent_id}{i}"] = na
             else:
-                # No division, just update the agent in the next state
-                next_state['agents'][agent_id] = agent_properties
+                next_state['agents'][agent_id] = a
 
-        # Simulate dynamics for this step
+        # dynamics step
         new_state = process.update(next_state, interval)
 
         timeline.append({
@@ -420,7 +465,6 @@ def growth_division_simulation(
             **new_state
         })
 
-        # Prepare state for the next timestep
         state = new_state
 
     return timeline
@@ -587,7 +631,7 @@ def run_pymunk_experiment():
     config = {
         'env_size': 600,
         'gravity': -9.81,
-        'elasticity': 0.1
+        'elasticity': 0.1,
     }
     simulation_data2 = run_simulation(initial_state, config, interval, steps)
 
@@ -613,17 +657,21 @@ def run_growth_division():
     }
 
     interval = 1
-    steps = 1000
+    steps = 1500
     growth_rate = 0.002
     configgr = {'env_size': 600,
-                'gravity': 0}
+                'gravity': 0,
+                'jitter_force': 5e-2,
+                }
     simulation_data4 = growth_division_simulation(
         initial_state,
         configgr,
         interval,
         steps,
         growth_rate,
-        division_threshold=21
+        division_threshold=21,
+        threshold_noise_std=0.1,
+        threshold_noise_mode='relative',
     )
 
     # make video
@@ -674,7 +722,7 @@ def run_composition(initial_state, config, interval, steps):
     # run the simulation
     total_time = interval * steps
     sim.run(total_time)
-    data = sim.gather_results()
+    data = gather_emitter_results(sim)
     return data
 
 
@@ -699,7 +747,14 @@ def run_composition_experiment():
     steps = 1000
     # growth_rate = 0.002
     config = {'env_size': 600, 'gravity': 0}
-    run_composition(initial_state, config, interval, steps)
+    results = run_composition(initial_state, config, interval, steps)
+
+    # make video
+    simulation_to_gif(
+        results,
+        config=config,
+        skip_frames=10,
+        filename='composite_experiment.gif')
 
 
 
