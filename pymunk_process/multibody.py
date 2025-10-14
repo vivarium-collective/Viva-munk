@@ -1,336 +1,646 @@
-"""
-=========================
-Multibody physics process
-=========================
-
-Simulates collisions between cell bodies with a physics engine.
-"""
-
-import pytest
+import os
 import random
 import math
-import copy
-
 import numpy as np
+import imageio.v2 as imageio
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+from matplotlib.lines import Line2D
+from matplotlib.patches import Circle
 
-# process-bigraph imports
+import pymunk
+
 from process_bigraph import Process, Composite, ProcessTypes
-from pymunk_process.pymunk_minimal import PymunkMinimal as Pymunk
-from pymunk_process.units import units, remove_units
-from pymunk_process import REGISTER_TYPES
-from pymunk_process.plots.snapshots import plot_snapshots, format_snapshot_data
-from pymunk_process.plots.snapshots_video import make_video
 
 
-DEFAULT_LENGTH_UNIT = units.um
-DEFAULT_BOUNDS = [200 * DEFAULT_LENGTH_UNIT, 200 * DEFAULT_LENGTH_UNIT]
-DEFAULT_MASS_UNIT = units.ng
-DEFAULT_TIME_UNIT = units.s
-DEFAULT_VELOCITY_UNIT = DEFAULT_LENGTH_UNIT / DEFAULT_TIME_UNIT
-
-# constants
-PI = math.pi
+# make core
+PYMUNK_CORE = ProcessTypes()
 
 
-# helper functions
-def daughter_locations(mother_location, state):
-    """Given a mother's location, place daughters close"""
-    mother_length = state['length']
-    mother_x = mother_location[0]
-    mother_y = mother_location[1]
-    locations = []
+def random_body_position(body):
+    ''' Pick a random point along the boundary of the body (rectangle) '''
+    length = body.length
+    width = body.width
+    edge = random.choice(['left', 'right', 'bottom', 'top'])
+
+    if edge == 'left':
+        # Random point along the left vertical edge
+        return (0, random.uniform(0, length))
+    elif edge == 'right':
+        # Random point along the right vertical edge
+        return (width, random.uniform(0, length))
+    elif edge == 'bottom':
+        # Random point along the bottom horizontal edge
+        return (random.uniform(0, width), 0)
+    elif edge == 'top':
+        # Random point along the top horizontal edge
+        return (random.uniform(0, width), length)
+
+
+def daughter_locations(parent_state):
+    parent_length = parent_state['length']
+    parent_angle = parent_state['angle']
+    parent_location = parent_state['location']
+    pos_ratios = [-0.35, 0.35]  #[-0.25, 0.25]
+    daughter_locations = []
     for daughter in range(2):
-        location = [mother_x + random.gauss(0, 0.1) * mother_length,
-                    mother_y + random.gauss(0, 0.1) * mother_length]
-        locations.append(location)
-    return locations
+        dx = parent_length * pos_ratios[daughter] * math.cos(parent_angle)
+        dy = parent_length * pos_ratios[daughter] * math.sin(parent_angle)
+        location = [parent_location[0] + dx, parent_location[1] + dy]
+        daughter_locations.append(location)
+    return daughter_locations
 
 
-def sphere_volume_from_diameter(diameter):
-    """Given a diameter for a sphere, return the volume"""
-    radius = diameter / 2
-    volume = 4 / 3 * (PI * radius ** 3)
-    return volume
 
-
-def make_random_position(bounds):
-    """Return a random position with the [x, y] bounds"""
-    return [
-        np.random.uniform(0, bound.magnitude) * bound.units
-        for bound in bounds]
-
-
-def add_to_dict(d, added):
-    for k, v in added.items():
-        if k in d:
-            d[k] += v
-        else:
-            d[k] = v
-    return d
-
-
-def remove_from_dict(d, removed):
-    for k, v in removed.items():
-        if k in d:
-            d[k] -= v
-        else:
-            d[k] = -v
-    return d
-
-
-class Multibody(Process):
-    """Multibody process for tracking cell bodies.
-
-    Simulates collisions between
-     cell bodies with a physics engine.
-
-    :term:`Ports`:
-    * ``agents``: The store containing all cell sub-compartments. Each cell in
-      this store has values for location, diameter, mass.
-
-    Arguments:
-        parameters(dict): Accepts the following configuration keys:
-
-        * **jitter** (float): random force applied to agents, in pN.
-        * **bounds** (list): size of the environment in the units specified by length_unit, with ``[x, y]``.
-        * **length_unit** (Quantity): standard length unit for the physics engine -- this includes the bounds.
-        * **mass_unit** (Quantity): standard mass unit for the physics engine.
-        * **velocity_unit** (Quantity): standard velocity unit for the physics engine.
-        * ***animate*** (:py:class:`bool`): interactive matplotlib option to
-          animate multibody. To run with animation turned on set True, and use
-          the TKAgg matplotlib backend:
-
-          .. code-block:: console
-
-              $ MPLBACKEND=TKAgg python tumor_tcell/processes/neighbors.py
-    """
-
+class PymunkProcess(Process):
     config_schema = {
+        'env_size': {
+            '_type': 'float',
+            '_default': 500
+        },
+        'damping': {
+            '_type': 'float',
+            '_default': 0.9
+        },
+        'gravity': {
+            '_type': 'float',
+            '_default': -9.81
+        },
+        'friction': {
+            '_type': 'float',
+            '_default': 0.8
+        },
+        'elasticity': {
+            '_type': 'float',
+            '_default': 0
+        },
         'jitter_force': {
             '_type': 'float',
-            '_default': 1e-6,
+            '_default': 1e-2
         },
-        'bounds': 'point2d',
-        'length_unit': {
-            '_type': 'string',
-            '_default': 'um'
-        },
-        'mass_unit': {'_type': 'string', '_default': 'ng'},
-        'time_unit': {'_type': 'string', '_default': 's'},
-        'animate': 'boolean',
+        'barriers': 'list[map]',
     }
 
     def __init__(self, config=None, core=None):
-        # This means registration must be idempotent
-        # make this operation fast if already registered (!)
-        # REGISTER_TYPES(self.core)
-
         super().__init__(config, core)
 
-        self.length_unit = units(self.config['length_unit'])
-        self.mass_unit = units(self.config['mass_unit'])
-        self.time_unit = units(self.config['time_unit'])
-        self.velocity_unit = self.length_unit / self.time_unit
-        self.cell_loc_units = {}
+        # create the environment
+        self.space = pymunk.Space()
+        self.space.gravity = (0, self.config['gravity'])  # Gravity set for the space
+        self.space.damping = self.config['damping']  # Add some damping
+        self.agents = {}
 
-        # make the multibody object
-        timestep = self.config.get('interval', 1.0)  # TODO -- how do we get the timestep default?
-        pymunk_config = {
-            'cell_shape': 'circle',
-            'jitter_force': self.config['jitter_force'],
-            'bounds': [
-                b.to(self.length_unit).magnitude
-                for b in config['bounds']],
-            'physics_dt': min(timestep / 10, 0.1)}
-        self.physics = Pymunk(pymunk_config)
+        # add walls
+        env_size = self.config['env_size']
+        boundary_thickness = 100  # Increase thickness if needed
+        walls = [
+            pymunk.Segment(self.space.static_body,
+                           (-boundary_thickness, -boundary_thickness),
+                           (env_size + boundary_thickness, -boundary_thickness),
+                           boundary_thickness
+                           ),
+            pymunk.Segment(self.space.static_body,
+                           (env_size + boundary_thickness, -boundary_thickness),
+                           (env_size + boundary_thickness, env_size + boundary_thickness),
+                           boundary_thickness
+                           ),
+            pymunk.Segment(self.space.static_body,
+                           (env_size + boundary_thickness, env_size + boundary_thickness),
+                           (-boundary_thickness, env_size + boundary_thickness),
+                           boundary_thickness
+                           ),
+            pymunk.Segment(self.space.static_body,
+                           (-boundary_thickness, env_size + boundary_thickness),
+                           (-boundary_thickness, -boundary_thickness),
+                           boundary_thickness
+                           )
+        ]
+        for wall in walls:
+            wall.elasticity = self.config['elasticity']
+            wall.friction = self.config['friction']
+            self.space.add(wall)
 
-        # interactive plot for visualization
-        self.animate = self.config['animate']
-        if self.animate:
-            plt.ion()
-            self.ax = plt.gca()
-            self.ax.set_aspect('equal')
+        # add custom barriers
+        for barrier in self.config.get('barriers', []):
+            self.add_barrier(barrier)
+
+    def add_barrier(self, barrier):
+        start_x, start_y = barrier['start']
+        end_x, end_y = barrier['end']
+        start = pymunk.Vec2d(start_x, start_y)
+        end = pymunk.Vec2d(end_x, end_y)
+        thickness = barrier.get('thickness', 1)
+        segment = pymunk.Segment(self.space.static_body, start, end, thickness)
+        segment.elasticity = barrier.get('elasticity', 1.0)
+        segment.friction = barrier.get('friction', 0.5)
+        self.space.add(segment)
 
     def inputs(self):
         return {
-            'agents': 'map[boundary:boundary]'
+            'agents': 'map[circle_agent]'
         }
 
     def outputs(self):
         return {
-            'agents': 'map[boundary:boundary]'
+            'agents': 'map[circle_agent]'
         }
 
-    def update(self, state, interval):
-        agents = state.get('agents', {})
+    def update(self, inputs, interval):
+        self.update_bodies(inputs['agents'])
 
-        # animate before update
-        if self.animate:
-            self.animate_frame(agents)
-
-        # update physics with new agents
-        munk_agents = self.bodies_remove_units(
-            copy.deepcopy(agents))
-        self.physics.update_bodies(munk_agents)
-
-        # run simulation
-        self.physics.run(interval)
-
-        # get new cell positions and neighbors
-        cell_positions = self.physics.get_body_positions()
-
-        # add units to cell_positions
-        cell_positions = self.location_add_units(cell_positions)
+        n_steps = 100
+        dt = interval / n_steps
+        for _ in range(n_steps):
+            # apply forces
+            for body in self.space.bodies:
+                self.apply_jitter_force(body)
+            self.space.step(dt)
 
         update = {
-            'agents': {
-                cell_id: {
-                    'boundary': {
-                        'angle': cell_positions[cell_id]['angle'],
-                        'location': tuple([
-                            new_loc - old_loc
-                            for new_loc, old_loc in zip(
-                                cell_positions[cell_id]['location'],
-                                agents[cell_id]['boundary']['location'])])
-                    },
-                } for cell_id in agents.keys()
-            }
+            'agents': self.capture_state()
         }
+        #
+        # for body in self.space.bodies:
+        #     print("Body ID:", id(body))
+        #     print("Position:", body.position)
+        #     print("Velocity:", body.velocity)
+        #     print("Mass:", body.mass)
+        #     print("Angle:", body.angle)
+        #
+        # print("\n")
+        # for shape in self.space.shapes:
+        #     if shape.body.body_type == pymunk.Body.STATIC:
+        #         continue
+        #
+        #     print("Shape Type:", type(shape))
+        #     print("Body Position:", shape.body.position)  # Position is stored in the body, not the shape
+        #     if isinstance(shape, pymunk.Segment):
+        #         print("Segment Start:", shape.a)
+        #         print("Segment End:", shape.b)
+        #         print("Thickness:", shape.radius)
+
+        # print(inputs['agents'].keys())
+        # if len(inputs['agents']) > 1:
+        #     x=1
+        #     pass
+
         return update
 
-    def bodies_remove_units(self, bodies):
-        """Convert units to the standard, and then remove them
+    def apply_jitter_force(self, body):
+        jitter_location = random_body_position(body)
+        jitter_force = [
+            random.normalvariate(0, self.config['jitter_force']),
+            random.normalvariate(0, self.config['jitter_force'])]
+        body.apply_impulse_at_local_point(
+            jitter_force,
+            jitter_location)
 
-        This is required for interfacing the physics engine, which does not track units
-        """
-        for bodies_id, specs in bodies.items():
-            # convert location
-            bodies[bodies_id]['boundary']['location'] = [loc.to(self.length_unit).magnitude for loc in
-                                                         specs['boundary']['location']]
-            # convert diameter
-            bodies[bodies_id]['boundary']['length'] = specs['boundary']['length'].to(self.length_unit).magnitude
-            bodies[bodies_id]['boundary']['width'] = specs['boundary']['width'].to(self.length_unit).magnitude
-            # convert mass
-            bodies[bodies_id]['boundary']['mass'] = specs['boundary']['mass'].to(self.mass_unit).magnitude
-            # convert velocity
-            bodies[bodies_id]['boundary']['velocity'] = specs['boundary']['velocity'].to(self.velocity_unit).magnitude
-        return bodies
+    def update_bodies(self, agents):
+        existing_ids = set(self.agents.keys())
+        new_ids = set(agents.keys())
 
-    def location_add_units(self, bodies):
-        for body_id, body_data in bodies.items():
-            location = body_data['location']
-            bodies[body_id] = {
-                'location': [(loc * self.length_unit) for loc in location],
-                'angle': body_data['angle']}
-        return bodies
+        # Remove objects not in the new state
+        for agent_id in existing_ids - new_ids:
+            body = self.agents[agent_id]['body']
+            shape = self.agents[agent_id]['shape']
+            self.space.remove(body, shape)
+            del self.agents[agent_id]
 
-    def remove_length_units(self, value):
-        return value.to(self.length_unit).magnitude
+        # Add or update existing objects
+        for agent_id, attrs in agents.items():
+            self.manage_object(agent_id, attrs)
 
-    def animate_frame(self, agents):
-        """matplotlib interactive plot"""
-        plt.cla()
-        bounds = copy.deepcopy(self.config['bounds'])
-        for cell_id, data in agents.items():
-            # location, orientation, length
-            data = data['boundary']
-            x_center = self.remove_length_units(data['location'][0])
-            y_center = self.remove_length_units(data['location'][1])
-            length = self.remove_length_units(data['length'])
+    def manage_object(self, agent_id, attrs):
+        agent = self.agents.get(agent_id)
+        if not agent:
+            self.create_new_object(agent_id, attrs)
+            return
 
-            # get bottom left position
-            radius = (length / 2)
-            x = x_center - radius
-            y = y_center - radius
+        body = agent['body']
+        old_shape = agent['shape']
+        new_shape = None  # Initialize new_shape to None
 
-            # Create a circle
-            circle = patches.Circle((x, y), radius, linewidth=1, edgecolor='b')
-            self.ax.add_patch(circle)
+        # TODO -- make a new body???
+        mass = attrs['mass']
+        body.mass = mass
+        body.position = pymunk.Vec2d(*attrs['location'])
+        body.velocity = pymunk.Vec2d(*attrs['velocity'])
 
-        xl = self.remove_length_units(bounds[0])
-        yl = self.remove_length_units(bounds[1])
-        plt.xlim([-xl, 2 * xl])
-        plt.ylim([-yl, 2 * yl])
-        plt.draw()
-        plt.pause(0.01)
+        shape_type = attrs.get('type', 'circle')
+        if shape_type == 'circle':
+            radius = attrs['radius']
+            new_shape = pymunk.Circle(body, radius)
+            body.moment = pymunk.moment_for_circle(mass, 0, radius)
+
+        elif shape_type == 'segment':
+            length = attrs['length']
+            radius = attrs['radius']
+            angle = attrs['angle']
+            start = pymunk.Vec2d(-length / 2, 0).rotated(angle)
+            end = pymunk.Vec2d(length / 2, 0).rotated(angle)
+            new_shape = pymunk.Segment(body, start, end, radius)
+            body.moment = pymunk.moment_for_segment(mass, start, end, radius)
+            body.angle = angle
+            body.length = length
+            body.width = radius * 2
+
+            # make sure to update the length in the agent dictionary
+            self.agents[agent_id]['length'] = length
+
+        # make sure to update the agent dictionary
+        self.agents[agent_id]['mass'] = mass
+
+        if new_shape:
+            self.space.remove(body, old_shape)  # Remove old shape if necessary
+
+            new_shape.elasticity = attrs.get('elasticity', self.config['elasticity'])  # TODO -- this elasticity and friction is the same as the walls...
+            new_shape.friction = attrs.get('friction', self.config['friction'])
+            self.space.add(body, new_shape)  # Add new shape to the space
+            agent['shape'] = new_shape
+
+    def create_new_object(self, agent_id, attrs):
+        shape_type = attrs.get('type', 'circle')
+        mass = attrs['mass']
+
+        # Initialize body differently based on the type
+        if shape_type == 'circle':
+            radius = attrs['radius']
+            inertia = pymunk.moment_for_circle(mass, 0, radius)  # correct inertia for circles
+            body = pymunk.Body(mass, inertia)
+            body.position = attrs['location']
+            shape = pymunk.Circle(body, radius)
+        elif shape_type == 'segment':
+            length = attrs['length']
+            radius = attrs['radius']  # this is the thickness of the segment
+            angle = attrs['angle']
+            start = (-length / 2, 0)
+            end = (length / 2, 0)
+            inertia = pymunk.moment_for_segment(mass, start, end, radius)  # correct inertia for segments
+            body = pymunk.Body(mass, inertia)
+            body.position = attrs['location']
+            body.angle = angle
+            body.length = length
+            body.width = radius * 2
+            shape = pymunk.Segment(body, start, end, radius)
+
+        shape.elasticity = attrs.get('elasticity', self.config['elasticity'])  # TODO -- this elasticity and friction is the same as the walls...
+        shape.friction = attrs.get('friction', self.config['friction'])
+        self.space.add(body, shape)
+        self.agents[agent_id] = {
+            'body': body,
+            'shape': shape,
+            'type': shape_type,
+            'mass': mass,
+            'radius': radius,
+            'angle': angle if shape_type == 'segment' else None,
+            'length': length if shape_type == 'segment' else None,
+        }
+
+    def capture_state(self):
+        state = {}
+        for agent_id, obj in self.agents.items():
+            if obj['type'] == 'circle':
+                state[agent_id] = {
+                    'type': obj['type'],
+                    'location': (obj['body'].position.x, obj['body'].position.y),
+                    'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
+                    'mass': obj['body'].mass,
+                    'inertia': obj['body'].moment,
+                    'radius': obj['shape'].radius
+                }
+            elif obj['type'] == 'segment':
+                state[agent_id] = {
+                    'type': obj['type'],
+                    'location': (obj['body'].position.x, obj['body'].position.y),
+                    'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
+                    'mass': obj['body'].mass,
+                    'inertia': obj['body'].moment,
+                    'length': obj['length'],
+                    'radius': obj['shape'].radius,
+                    'angle': obj['body'].angle
+                }
+        return state
 
 
-def get_agent_config(
-        location=None,
-        bounds=None,
-        velocity=None,
-        # volume=None,
-        length=None,
-        width=None,
-        mass=None,
-        unit_system=None,
+# register types
+circle_agent_type = {
+    'type': 'string',  # TODO this should be 'enum[circle, segment]'
+    'mass': 'float',
+    'radius': 'float',
+    'inertia': {'_type': 'float',
+                '_default': float('inf')
+                },
+    'location': ('float', 'float'),
+    'velocity': ('float', 'float'),
+    'elasticity': 'float'
+}
+segment_agent_type = {
+    '_inherit': 'circle_agent',
+    'length': 'float',
+    'angle': 'float',
+}
+
+PYMUNK_CORE.register('circle_agent', circle_agent_type)
+PYMUNK_CORE.register('segment_agent', segment_agent_type)
+
+# register process
+PYMUNK_CORE.process_registry.register('multibody', PymunkProcess)
+
+
+def run_simulation(initial_state, config, interval, steps):
+    process = PymunkProcess(config, core=PYMUNK_CORE)
+    state = initial_state
+
+    timeline = []
+    for step in range(steps):
+        new_state = process.update(state, interval)
+        timeline.append({
+            'time': step * interval,
+            **new_state
+        })
+
+        # update the state
+        state = new_state
+
+    return timeline
+
+
+def growth_division_simulation(
+        initial_state,
+        config,
+        interval,
+        steps,
+        growth_rate,
+        division_threshold,
 ):
-    unit_system = unit_system or {
-        'length': DEFAULT_LENGTH_UNIT,
-        'width': DEFAULT_LENGTH_UNIT,
-        'mass': DEFAULT_MASS_UNIT,
-        'time': DEFAULT_TIME_UNIT,
-        'velocity': DEFAULT_LENGTH_UNIT / DEFAULT_TIME_UNIT,
-    }
+    process = PymunkProcess(config, core=PYMUNK_CORE)
+    state = dict(initial_state)  # Deep copy if nested dictionaries or complex objects in state
 
-    length = length or 5 * unit_system['length']
-    width = width or 1.0 * unit_system['length']
-    mass = mass or 5 * unit_system['mass']
-    volume = sphere_volume_from_diameter(length)
-    velocity = velocity or 5 * unit_system['velocity']
+    timeline = []
+    for step in range(steps):
+        next_state = {'agents': {}}
+        for agent_id, agent_properties in state['agents'].items():
+            # Apply growth to mass and geometrical properties
+            new_mass = agent_properties['mass'] * (1 + growth_rate)
+            agent_properties['mass'] = new_mass
 
-    bounds = bounds or DEFAULT_BOUNDS
-    if location:
-        location = [
-            loc * bounds[n] * unit_system['length']
-            for n, loc in enumerate(location)]
-    else:
-        location = make_random_position(bounds)
+            if agent_properties['type'] == 'circle':
+                new_radius = agent_properties['radius'] * (1 + growth_rate)
+                agent_properties['radius'] = new_radius
+            elif agent_properties['type'] == 'segment':
+                new_length = agent_properties['length'] * (1 + growth_rate)
+                agent_properties['length'] = new_length
+
+            # Check for division
+            if new_mass > division_threshold:
+                # Adjust properties for division
+                half_mass = new_mass / 2
+                new_locations = daughter_locations(agent_properties)
+
+                for i in [0, 1]:
+                    new_agent_id = f"{agent_id}{i}"
+                    new_agent_properties = agent_properties.copy()
+
+                    new_agent_properties['location'] = new_locations[i]
+                    new_agent_properties['mass'] = half_mass
+                    if agent_properties['type'] == 'circle':
+                        new_agent_properties['radius'] = new_radius / 1.414  # Reduce radius to keep area proportional
+                    elif agent_properties['type'] == 'segment':
+                        new_agent_properties['length'] = new_length / 2  # Halve the length
+
+                    next_state['agents'][new_agent_id] = new_agent_properties
+            else:
+                # No division, just update the agent in the next state
+                next_state['agents'][agent_id] = agent_properties
+
+        # Simulate dynamics for this step
+        new_state = process.update(next_state, interval)
+
+        timeline.append({
+            'time': step * interval,
+            **new_state
+        })
+
+        # Prepare state for the next timestep
+        state = new_state
+
+    return timeline
+
+
+class LineWidthData(Line2D):
+    def __init__(self, *args, **kwargs):
+        _lw_data = kwargs.pop('linewidth', 1)
+        super().__init__(*args, **kwargs)
+        self._lw_data = _lw_data
+
+    def _get_lw(self):
+        if self.axes is not None:
+            ppd = 72. / self.axes.figure.dpi
+            trans = self.axes.transData.transform
+            return ((trans((1, self._lw_data)) - trans((0, 0))) * ppd)[1]
+        else:
+            return 1
+
+    def _set_lw(self, lw):
+        self._lw_data = lw
+
+    _linewidth = property(_get_lw, _set_lw)
+
+
+def simulation_to_gif(data, config, filename='simulation.gif', skip_frames=1):
+    if not os.path.exists('frames'):
+        os.makedirs('frames')
+    env_size = config['env_size']
+    barriers = config.get('barriers', [])
+
+    images = []
+    for index, step in enumerate(data[::skip_frames]):
+        fig, ax = plt.subplots()
+        ax.set_xlim(0, env_size)
+        ax.set_ylim(0, env_size)
+        ax.set_aspect('equal')
+
+        # Draw barriers
+        for barrier in barriers:
+            start_x, start_y = barrier['start']
+            end_x, end_y = barrier['end']
+            thickness = barrier.get('thickness', 1)  # Default thickness
+            barrier_line = Line2D([start_x, end_x], [start_y, end_y], linewidth=thickness, color='gray')
+            ax.add_line(barrier_line)
+
+        # Draw agents
+        for agent_id, obj in step['agents'].items():
+            if obj.get('type') == 'circle':
+                circle = Circle((obj['location'][0], obj['location'][1]),
+                                obj['radius'],
+                                fill=True)
+                ax.add_patch(circle)
+            elif obj.get('type') == 'segment':
+                length = obj['length']
+                thickness = obj['radius'] #* 2  # Visual thickness of the line
+                angle = obj['angle']
+
+                dx = np.cos(angle) * length / 2
+                dy = np.sin(angle) * length / 2
+                start_point = (obj['location'][0] - dx, obj['location'][1] - dy)
+                end_point = (obj['location'][0] + dx, obj['location'][1] + dy)
+
+                line = Line2D([start_point[0], end_point[0]],
+                              [start_point[1], end_point[1]],
+                              linewidth=thickness,
+                              solid_capstyle='round')
+                ax.add_line(line)
+
+        ax.set_title(f"Time = {step['time']:.1f}")
+        frame_filename = f'frames/frame_{index:04d}.png'
+        plt.savefig(frame_filename)
+        plt.close(fig)
+        images.append(imageio.imread(frame_filename))
+
+    imageio.mimsave(filename, images, duration=0.1, loop=0)
+
+    # Clean up the frames directory
+    for frame_filename in os.listdir('frames'):
+        os.remove(f'frames/{frame_filename}')
+    os.rmdir('frames')
+
+    # Output file saved message
+    print(f"GIF saved to {filename}")
+
+
+def get_mother_machine_config(
+    env_size=600,
+    spacer_thickness=5,
+    channel_height=500,
+    channel_space=50
+):
+    barriers = []
+    y_start = 0  # Start at the bottom of the environment
+    y_end = channel_height  # Height of the channel
+
+    # Calculate how many barriers can fit within the env_size
+    num_channels = int(env_size / (spacer_thickness + channel_space))
+
+    # Generate barriers based on calculated number
+    x_position = spacer_thickness + channel_space
+    for _ in range(num_channels):
+        barrier = {
+            'start': (x_position, y_start),
+            'end': (x_position, y_end),
+            'thickness': spacer_thickness
+        }
+        barriers.append(barrier)
+
+        # Update x_position for the next barrier, adding the space for the channel
+        x_position += spacer_thickness + channel_space
 
     return {
-        'grow': {
-            '_type': 'process',
-            'address': 'local:grow',
-            'config': {
-                'growth_rate': 0.006,
-                'default_growth_noise': 1e-3,
+        'env_size': env_size,
+        'barriers': barriers
+    }
+
+
+def run_pymunk_experiment():
+    initial_state = {
+        'agents': {
+            '0': {
+                'type': 'circle',
+                'mass': 10.0,
+                'radius': 15,
+                'location': (100, 200),
+                'velocity': (0, 0),
+                'elasticity': 0.0
             },
-        },
-        'boundary': {
-            'location': location,
-            'velocity': velocity,
-            'volume': volume,
-            'length': length,
-            'width': width,
-            'angle': random.uniform(0, 2 * PI),
-            'mass': mass,
-            'thrust': 0,
-            'torque': 0,
+            '1': {
+                'type': 'circle',
+                'mass': 1.0,
+                'radius': 25,
+                'location': (100.5, 250),
+                'velocity': (0, 10),
+                'elasticity': 0.0
+            },
+            '2': {
+                'type': 'segment',
+                'mass': 20.0,
+                'length': 50,  # Total length of the segment
+                'radius': 10,  # Thickness of the segment
+                'angle': 0.785,  # Angle in radians (approximately 45 degrees)
+                'location': (300, 500),
+                'velocity': (0, 0),
+                'elasticity': 0.0
+            },
+            '3': {
+                'type': 'segment',
+                'mass': 100.0,
+                'length': 80,  # Total length of the segment
+                'radius': 20,  # Thickness of the segment
+                'angle': -0.785,  # Angle in radians (approximately 45 degrees)
+                'location': (400, 400),
+                'velocity': (-0.1, 0),
+                'elasticity': 0.0
+            },
         }
     }
 
+    # run simulation
+    interval = 0.1
+    steps = 600
+    config = {
+        'env_size': 600,
+        'gravity': -9.81,
+        'elasticity': 0.1
+    }
+    simulation_data2 = run_simulation(initial_state, config, interval, steps)
 
-@pytest.fixture
-def core():
-    corex = ProcessTypes()
-    REGISTER_TYPES(corex)
-    corex.process_registry.register('multibody', Multibody)
-    return corex
+    # make video
+    simulation_to_gif(simulation_data2, filename='circlesandsegments', config=config, skip_frames=10)
 
 
-def run_multibody(core):
-    n_agents = 10
-    bounds = DEFAULT_BOUNDS
+def run_growth_division():
+    initial_state = {
+        'agents': {
+            'X': {
+                '_type': 'segment_agent',
+                'type': 'segment',
+                'mass': 20.0,
+                'length': 50,  # Total length of the segment
+                'radius': 10,  # Thickness of the segment
+                'angle': 0.785,  # Angle in radians (approximately 45 degrees)
+                'location': (200, 200),
+                'velocity': (0, 0),
+                'elasticity': 0.1
+            },
+        }
+    }
 
-    state = {
+    interval = 1
+    steps = 1000
+    growth_rate = 0.002
+    configgr = {'env_size': 600,
+                'gravity': 0}
+    simulation_data4 = growth_division_simulation(
+        initial_state,
+        configgr,
+        interval,
+        steps,
+        growth_rate,
+        division_threshold=21
+    )
+
+    # make video
+    simulation_to_gif(
+        simulation_data4,
+        config=configgr,
+        skip_frames=10,
+        filename='growth_division.gif')
+
+
+def run_composition(initial_state, config, interval, steps):
+    sim_state = {
         'multibody': {
             '_type': 'process',
+            'interval': interval,
             'address': 'local:multibody',
-            'config': {
-                'bounds': bounds
-            },
+            'config': config,
             'inputs': {
                 'agents': ['agents'],
             },
@@ -338,17 +648,12 @@ def run_multibody(core):
                 'agents': ['agents'],
             }
         },
-        'agents': {
-            str(i): get_agent_config(
-                bounds=bounds)
-            for i in range(n_agents)
-        },
         'emitter': {
             '_type': 'step',
             'address': 'local:ram-emitter',
             'config': {
                 'emit': {
-                    'agents': 'map[boundary:boundary]',
+                    'agents': 'any',
                     'time': 'float'
                 }
             },
@@ -358,40 +663,47 @@ def run_multibody(core):
             },
         }
     }
+    sim_state.update(initial_state)
 
-    sim = Composite({
-        'state': state
-    }, core=core)
+    # make the composite
+    sim = Composite(
+        {'state': sim_state},
+        core=PYMUNK_CORE
+    )
 
     # run the simulation
-    sim.run(10)
-
+    total_time = interval * steps
+    sim.run(total_time)
     data = sim.gather_results()
+    return data
 
-    agents, fields = format_snapshot_data(data[('emitter',)])
-    plot_snapshots(
-        bounds,
-        agents=agents,
-        fields=fields,
-        out_dir='out',
-    )
 
-    # make video
-    make_video(
-        data={'fields': fields,
-              'agents': agents},
-        bounds=bounds,
-        # plot_type='tag',
-        # step=step,
-        out_dir='out',
-        filename=f"snapshots",
-        # highlight_agents=highlight_agents,
-        # show_timeseries=tagged_molecules,
-    )
+def run_composition_experiment():
+    initial_state = {
+        'agents': {
+            'X': {
+                '_type': 'segment_agent',
+                'type': 'segment',
+                'mass': 20.0,
+                'length': 50,  # Total length of the segment
+                'radius': 10,  # Thickness of the segment
+                'angle': 0.785,  # Angle in radians (approximately 45 degrees)
+                'location': (200, 200),
+                'velocity': (0, 0),
+                'elasticity': 0.1
+            },
+        }
+    }
+
+    interval = 0.1
+    steps = 1000
+    # growth_rate = 0.002
+    config = {'env_size': 600, 'gravity': 0}
+    run_composition(initial_state, config, interval, steps)
+
+
 
 if __name__ == '__main__':
-    core = ProcessTypes()
-    REGISTER_TYPES(core)
-    core.process_registry.register('multibody', Multibody)
-
-    run_multibody(core)
+    # run_pymunk_experiment()
+    run_growth_division()
+    # run_composition_experiment()
