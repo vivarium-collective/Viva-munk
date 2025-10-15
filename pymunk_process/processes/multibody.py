@@ -9,67 +9,82 @@ import pymunk
 from process_bigraph import Process
 
 
-def random_body_position(body):
-    ''' Pick a random point along the boundary of the body (rectangle) '''
-    length = body.length
-    width = body.width
-    edge = random.choice(['left', 'right', 'bottom', 'top'])
-
-    if edge == 'left':
-        # Random point along the left vertical edge
-        return (0, random.uniform(0, length))
-    elif edge == 'right':
-        # Random point along the right vertical edge
-        return (width, random.uniform(0, length))
-    elif edge == 'bottom':
-        # Random point along the bottom horizontal edge
-        return (random.uniform(0, width), 0)
-    elif edge == 'top':
-        # Random point along the top horizontal edge
-        return (random.uniform(0, width), length)
+# def random_body_position(body):
+#     ''' Pick a random point along the boundary of the body (rectangle) '''
+#     length = body.length
+#     width = body.width
+#     edge = random.choice(['left', 'right', 'bottom', 'top'])
+#
+#     if edge == 'left':
+#         # Random point along the left vertical edge
+#         return (0, random.uniform(0, length))
+#     elif edge == 'right':
+#         # Random point along the right vertical edge
+#         return (width, random.uniform(0, length))
+#     elif edge == 'bottom':
+#         # Random point along the bottom horizontal edge
+#         return (random.uniform(0, width), 0)
+#     elif edge == 'top':
+#         # Random point along the top horizontal edge
+#         return (random.uniform(0, width), length)
 
 
 def daughter_locations(parent_state):
-    parent_length = parent_state['length']
-    parent_angle = parent_state['angle']
-    parent_location = parent_state['location']
-    pos_ratios = [-0.35, 0.35]  #[-0.25, 0.25]
-    daughter_locations = []
-    for daughter in range(2):
-        dx = parent_length * pos_ratios[daughter] * math.cos(parent_angle)
-        dy = parent_length * pos_ratios[daughter] * math.sin(parent_angle)
-        location = [parent_location[0] + dx, parent_location[1] + dy]
-        daughter_locations.append(location)
-    return daughter_locations
+    p_loc = parent_state['location']
+    p_angle = parent_state.get('angle', 0.0)
+
+    if parent_state['type'] == 'segment':
+        # offset along the rod axis
+        parent_len = parent_state['length']
+        pos_ratios = (-0.35, 0.35)
+        offsets = [parent_len * r for r in pos_ratios]
+        dxs = [o * math.cos(p_angle) for o in offsets]
+        dys = [o * math.sin(p_angle) for o in offsets]
+        return [[p_loc[0] + dxs[0], p_loc[1] + dys[0]],
+                [p_loc[0] + dxs[1], p_loc[1] + dys[1]]]
+
+    # circle: offset along an arbitrary axis (use angle to keep consistent orientation over time)
+    r = parent_state['radius']
+    d = max(2*r*0.8, 1.0)  # try to separate daughters ~0.8 diameters
+    dx = (d/2) * math.cos(p_angle)
+    dy = (d/2) * math.sin(p_angle)
+    return [[p_loc[0] - dx, p_loc[1] - dy],
+            [p_loc[0] + dx, p_loc[1] + dy]]
+
+def local_impulse_point_for_shape(shape):
+    """Return a random local point on the shape boundary in the body's local coords."""
+    if isinstance(shape, pymunk.Circle):
+        r = shape.radius
+        theta = random.uniform(0, 2 * math.pi)
+        return (r * math.cos(theta), r * math.sin(theta))
+
+    if isinstance(shape, pymunk.Segment):
+        # segment is from a->b in local coords; choose a random point along it, add small normal offset within radius
+        t = random.random()
+        ax, ay = shape.a
+        bx, by = shape.b
+        px, py = ax + t * (bx - ax), ay + t * (by - ay)
+        # slight offset toward the “edge” to avoid perfectly central impulses
+        nx, ny = -(by - ay), (bx - ax)  # unnormalized normal
+        nlen = math.hypot(nx, ny) or 1.0
+        nx, ny = nx / nlen, ny / nlen
+        return (px + nx * shape.radius, py + ny * shape.radius)
+
+    # fallback: body center
+    return (0.0, 0.0)
 
 
 class PymunkProcess(Process):
     config_schema = {
-        'env_size': {
-            '_type': 'float',
-            '_default': 500
-        },
-        'damping': {
-            '_type': 'float',
-            '_default': 0.9
-        },
-        'gravity': {
-            '_type': 'float',
-            '_default': -9.81
-        },
-        'friction': {
-            '_type': 'float',
-            '_default': 0.8
-        },
-        'elasticity': {
-            '_type': 'float',
-            '_default': 0
-        },
-        'jitter_force': {
-            '_type': 'float',
-            '_default': 1e-2
-        },
+        'env_size': {'_type': 'float', '_default': 500},
+        'substeps': {'_type': 'integer', '_default': 100},
+        'damping_per_second': {'_type': 'float', '_default': 0.98},
+        'gravity': {'_type': 'float', '_default': -9.81},
+        'friction': {'_type': 'float', '_default': 0.8},
+        'elasticity': {'_type': 'float', '_default': 0.0},
+        'jitter_per_second': {'_type': 'float', '_default': 1e-2},  # (impulse std)
         'barriers': 'list[map]',
+        'wall_thickness': {'_type': 'float', '_default': 100},
     }
 
     def __init__(self, config=None, core=None):
@@ -78,12 +93,15 @@ class PymunkProcess(Process):
         # create the environment
         self.space = pymunk.Space()
         self.space.gravity = (0, self.config['gravity'])  # Gravity set for the space
-        self.space.damping = self.config['damping']  # Add some damping
+        self.substeps = int(self.config.get('substeps', 100))
+        self.damping_per_second = float(self.config.get('damping_per_second', 0.98))
+        self.jitter_per_second = float(self.config.get('jitter_per_second', 1e-2))
+
         self.agents = {}
 
         # add walls
         env_size = self.config['env_size']
-        boundary_thickness = 100  # Increase thickness if needed
+        boundary_thickness = self.config.get('wall_thickness', 100)
         walls = [
             pymunk.Segment(self.space.static_body,
                            (-boundary_thickness, -boundary_thickness),
@@ -128,23 +146,27 @@ class PymunkProcess(Process):
 
     def inputs(self):
         return {
-            'agents': 'map[circle_agent]'
+            'agents': 'map[any]'  # make this map[enum[agent types]
         }
 
     def outputs(self):
         return {
-            'agents': 'map[circle_agent]'
+            'agents': 'map[any]' # make this map[enum[agent types]
         }
 
     def update(self, inputs, interval):
         self.update_bodies(inputs['agents'])
 
-        n_steps = 100
+        n_steps = int(self.config.get('substeps', 100))
         dt = interval / n_steps
+
+        # per-step damping from per-second spec: d_step = dps ** dt
+        d_step = self.damping_per_second ** dt
+
         for _ in range(n_steps):
-            # apply forces
+            self.space.damping = d_step
             for body in self.space.bodies:
-                self.apply_jitter_force(body)
+                self.apply_jitter_force(body, dt)  # pass dt
             self.space.step(dt)
 
         update = {
@@ -177,14 +199,15 @@ class PymunkProcess(Process):
 
         return update
 
-    def apply_jitter_force(self, body):
-        jitter_location = random_body_position(body)
-        jitter_force = [
-            random.normalvariate(0, self.config['jitter_force']),
-            random.normalvariate(0, self.config['jitter_force'])]
-        body.apply_impulse_at_local_point(
-            jitter_force,
-            jitter_location)
+    def apply_jitter_force(self, body, dt):
+        shape = next(iter(body.shapes)) if body.shapes else None
+        local_point = local_impulse_point_for_shape(shape) if shape else (0.0, 0.0)
+
+        # Scale per-second noise to the step: σ_step ≈ σ_sec * sqrt(dt)
+        sigma = self.jitter_per_second * math.sqrt(max(dt, 1e-12))
+        fx = random.normalvariate(0.0, sigma)
+        fy = random.normalvariate(0.0, sigma)
+        body.apply_impulse_at_local_point((fx, fy), local_point)
 
     def update_bodies(self, agents):
         existing_ids = set(self.agents.keys())
@@ -209,73 +232,103 @@ class PymunkProcess(Process):
 
         body = agent['body']
         old_shape = agent['shape']
-        new_shape = None  # Initialize new_shape to None
+        old_type = agent['type']
 
-        # TODO -- make a new body???
-        mass = attrs['mass']
+        # robust defaults
+        shape_type = attrs.get('type', old_type or 'circle')
+        mass = float(attrs.get('mass', body.mass))
+        vx, vy = attrs.get('velocity', (0.0, 0.0))
         body.mass = mass
-        body.position = pymunk.Vec2d(*attrs['location'])
-        body.velocity = pymunk.Vec2d(*attrs['velocity'])
+        body.position = pymunk.Vec2d(*attrs.get('location', (body.position.x, body.position.y)))
+        body.velocity = pymunk.Vec2d(vx, vy)
 
-        shape_type = attrs.get('type', 'circle')
+        needs_rebuild = False
         if shape_type == 'circle':
-            radius = attrs['radius']
-            new_shape = pymunk.Circle(body, radius)
-            body.moment = pymunk.moment_for_circle(mass, 0, radius)
-
+            radius = float(attrs['radius'])
+            if not isinstance(old_shape, pymunk.Circle) or abs(
+                    old_shape.radius - radius) > 1e-9 or old_type != 'circle':
+                needs_rebuild = True
+            if needs_rebuild:
+                new_shape = pymunk.Circle(body, radius)
+                body.moment = pymunk.moment_for_circle(mass, 0, radius)
         elif shape_type == 'segment':
-            length = attrs['length']
-            radius = attrs['radius']
-            angle = attrs['angle']
+            length = float(attrs['length'])
+            radius = float(attrs['radius'])
+            angle = float(attrs['angle'])
+            # local endpoints
             start = pymunk.Vec2d(-length / 2, 0).rotated(angle)
             end = pymunk.Vec2d(length / 2, 0).rotated(angle)
-            new_shape = pymunk.Segment(body, start, end, radius)
-            body.moment = pymunk.moment_for_segment(mass, start, end, radius)
+            if not isinstance(old_shape, pymunk.Segment) or abs(
+                    old_shape.radius - radius) > 1e-9 or old_type != 'segment':
+                needs_rebuild = True
+            if needs_rebuild:
+                new_shape = pymunk.Segment(body, start, end, radius)
+                body.moment = pymunk.moment_for_segment(mass, start, end, radius)
             body.angle = angle
             body.length = length
             body.width = radius * 2
+        else:
+            raise ValueError(f"Unknown shape type: {shape_type}")
 
-            # make sure to update the length in the agent dictionary
-            self.agents[agent_id]['length'] = length
+        # swap shape if needed
+        if needs_rebuild:
+            # preserve material params
+            elasticity = attrs.get('elasticity', self.config['elasticity'])
+            friction = attrs.get('friction', self.config['friction'])
+            new_shape.elasticity = elasticity
+            new_shape.friction = friction
 
-        # make sure to update the agent dictionary
-        self.agents[agent_id]['mass'] = mass
-
-        if new_shape:
-            self.space.remove(body, old_shape)  # Remove old shape if necessary
-
-            new_shape.elasticity = attrs.get('elasticity', self.config['elasticity'])  # TODO -- this elasticity and friction is the same as the walls...
-            new_shape.friction = attrs.get('friction', self.config['friction'])
-            self.space.add(body, new_shape)  # Add new shape to the space
+            self.space.remove(old_shape)
+            self.space.add(new_shape)
             agent['shape'] = new_shape
+
+        # keep dict in sync
+        agent['type'] = shape_type
+        agent['mass'] = mass
+        if shape_type == 'circle':
+            agent['radius'] = radius
+            agent['angle'] = None
+            agent['length'] = None
+        else:
+            agent['radius'] = radius
+            agent['angle'] = body.angle
+            agent['length'] = body.length
 
     def create_new_object(self, agent_id, attrs):
         shape_type = attrs.get('type', 'circle')
-        mass = attrs['mass']
+        mass = float(attrs.get('mass', 1.0))
+        vx, vy = attrs.get('velocity', (0.0, 0.0))
+        pos = attrs.get('location', (0.0, 0.0))
 
-        # Initialize body differently based on the type
         if shape_type == 'circle':
-            radius = attrs['radius']
-            inertia = pymunk.moment_for_circle(mass, 0, radius)  # correct inertia for circles
+            radius = float(attrs['radius'])
+            inertia = pymunk.moment_for_circle(mass, 0, radius)
             body = pymunk.Body(mass, inertia)
-            body.position = attrs['location']
+            body.position = pos
+            body.velocity = (vx, vy)
             shape = pymunk.Circle(body, radius)
+            angle = None
+            length = None
         elif shape_type == 'segment':
-            length = attrs['length']
-            radius = attrs['radius']  # this is the thickness of the segment
-            angle = attrs['angle']
+            length = float(attrs['length'])
+            radius = float(attrs['radius'])
+            angle = float(attrs['angle'])
             start = (-length / 2, 0)
             end = (length / 2, 0)
-            inertia = pymunk.moment_for_segment(mass, start, end, radius)  # correct inertia for segments
+            inertia = pymunk.moment_for_segment(mass, start, end, radius)
             body = pymunk.Body(mass, inertia)
-            body.position = attrs['location']
+            body.position = pos
+            body.velocity = (vx, vy)
             body.angle = angle
             body.length = length
             body.width = radius * 2
             shape = pymunk.Segment(body, start, end, radius)
+        else:
+            raise ValueError(f"Unknown shape type: {shape_type}")
 
-        shape.elasticity = attrs.get('elasticity', self.config['elasticity'])  # TODO -- this elasticity and friction is the same as the walls...
+        shape.elasticity = attrs.get('elasticity', self.config['elasticity'])
         shape.friction = attrs.get('friction', self.config['friction'])
+
         self.space.add(body, shape)
         self.agents[agent_id] = {
             'body': body,
@@ -283,8 +336,8 @@ class PymunkProcess(Process):
             'type': shape_type,
             'mass': mass,
             'radius': radius,
-            'angle': angle if shape_type == 'segment' else None,
-            'length': length if shape_type == 'segment' else None,
+            'angle': angle,
+            'length': length,
         }
 
     def capture_state(self):
