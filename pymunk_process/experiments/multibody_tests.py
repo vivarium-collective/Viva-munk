@@ -130,7 +130,7 @@ def get_mother_machine_config(
 
 def run_pymunk_experiment():
     initial_state = {
-        'agents': {
+        'cells': {
             '0': {
                 'type': 'circle',
                 'mass': 10.0,
@@ -198,16 +198,17 @@ def run_pymunk_experiment():
     emitter_state = emitter_from_wires(emitter_spec)
 
     doc = {
-        **initial_state,
-        **processes,
-        **emitter_state,
+        'state': {
+            **initial_state,
+            **processes,
+            **{'emitter': emitter_state},
+        }
     }
 
     sim = Composite(doc, core=PYMUNK_CORE)
     total_time = interval * steps
     sim.run(total_time)
-    results = gather_emitter_results(sim)
-
+    results = gather_emitter_results(sim)[('emitter',)]
 
     # make video
     simulation_to_gif(results, filename='circlesandsegments', config=config, skip_frames=10)
