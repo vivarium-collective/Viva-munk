@@ -146,12 +146,12 @@ class PymunkProcess(Process):
 
     def inputs(self):
         return {
-            'agents': 'map[any]'  # make this map[enum[agent types]
+            'agents': 'map[pymunk_agent]'  # make this map[enum[agent types]
         }
 
     def outputs(self):
         return {
-            'agents': 'map[any]' # make this map[enum[agent types]
+            'agents': 'map[pymunk_agent]' # make this map[enum[agent types]
         }
 
     def update(self, inputs, interval):
