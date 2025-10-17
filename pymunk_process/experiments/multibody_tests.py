@@ -194,7 +194,8 @@ def run_pymunk_experiment():
     }
 
     # emitter state
-    emitter_spec = {key: [key] for key in ['agents']}
+    emitter_spec = {'agents': ['cells'],
+                    'time': ['global_time']}
     emitter_state = emitter_from_wires(emitter_spec)
 
     doc = {
@@ -211,7 +212,10 @@ def run_pymunk_experiment():
     results = gather_emitter_results(sim)[('emitter',)]
 
     # make video
-    simulation_to_gif(results, filename='circlesandsegments', config=config, skip_frames=10)
+    simulation_to_gif(results,
+                      filename='circlesandsegments',
+                      config=config,
+                      skip_frames=10)
 
 
 
