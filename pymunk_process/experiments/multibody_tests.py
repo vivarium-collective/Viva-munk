@@ -211,12 +211,14 @@ def run_pymunk_experiment():
     sim.run(total_time)
     results = gather_emitter_results(sim)[('emitter',)]
 
+    print(f"Simulation completed with {len(results)} steps.")
+
     # make video
     simulation_to_gif(results,
                       filename='circlesandsegments',
                       config=config,
-                      skip_frames=10)
-
+                      # skip_frames=10
+                      )
 
 
 if __name__ == '__main__':
