@@ -24,8 +24,8 @@ def register_types(core):
         'radius': 'float',  # used by both circle and segment (segment = capsule radius)
 
         # OPTIONAL/segment-only fields: make them present with safe defaults
-        'length': {'_type': 'float', '_default': 0.0},
-        'angle':  {'_type': 'float', '_default': 0.0},
+        'length': {'_type': 'float', '_apply': 'set', '_default': 0.0},
+        'angle':  {'_type': 'float', '_apply': 'set', '_default': 0.0},
 
         # Common mechanical/visual fields
         'inertia':   {'_type': 'float', '_default': float('inf'), '_apply': 'set'},
@@ -37,37 +37,11 @@ def register_types(core):
             {'_type': 'float', '_apply': 'set'},
             {'_type': 'float', '_apply': 'set'}
         ),
-        'elasticity': {'_type': 'float', '_default': 0.0},
-        'friction':   {'_type': 'float', '_default': 0.8},
+        'elasticity': {'_type': 'float', '_apply': 'set', '_default': 0.0},
+        'friction':   {'_type': 'float', '_apply': 'set', '_default': 0.8},
     }
 
     core.register('pymunk_agent', pymunk_agent)
-
-
-
-
-
-
-
-    circle_agent_type = {
-        'type': 'string',  # TODO this should be 'enum[circle, segment]'
-        'mass': 'float',
-        'radius': 'float',
-        'inertia': {'_type': 'float',
-                    '_default': float('inf')
-                    },
-        'location': ('float', 'float'),
-        'velocity': ('float', 'float'),
-        'elasticity': 'float'
-    }
-    segment_agent_type = {
-        '_inherit': 'circle_agent',
-        'length': 'float',
-        'angle': 'float',
-    }
-
-    core.register('circle_agent', circle_agent_type)
-    core.register('segment_agent', segment_agent_type)
 
 
 def register_processes(core):
