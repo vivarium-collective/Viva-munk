@@ -69,8 +69,9 @@ def register_processes(core):
     core.process_registry.register('grow_divide', GrowDivide)
 
 
-def get_pymunk_core(config=None):
-    core = ProcessTypes()
+def core_import(core=None, config=None):
+    if not core:
+        core = ProcessTypes()
     register_types(core)
     register_processes(core)
     return core

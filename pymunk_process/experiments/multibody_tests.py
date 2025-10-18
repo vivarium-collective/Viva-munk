@@ -6,14 +6,21 @@ import copy
 import random
 import math
 
-from bigraph_viz import plot_bigraph
-from process_bigraph import Composite, gather_emitter_results
+from bigraph_viz import plot_bigraph, VisualizeTypes
+from process_bigraph import Composite, gather_emitter_results, ProcessTypes
 from process_bigraph.emitter import emitter_from_wires
-from pymunk_process import get_pymunk_core, PymunkProcess
+from pymunk_process import core_import, PymunkProcess
 from pymunk_process.processes.multibody import daughter_locations
 from pymunk_process.plots.multibody_plots import simulation_to_gif
 
-PYMUNK_CORE = get_pymunk_core()
+
+# core = VisualizeTypes()
+class VivariumTypes(ProcessTypes, VisualizeTypes):
+    def __init__(self):
+        super().__init__()
+
+core = VivariumTypes()
+PYMUNK_CORE = core_import(core)
 
 
 def growth_division_simulation(
