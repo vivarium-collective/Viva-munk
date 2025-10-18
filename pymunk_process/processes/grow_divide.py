@@ -5,6 +5,9 @@ class GrowDivide(Process):
     config_schema = {
         'rate': 'float'}
 
+    # def initialize(self, config):
+    #     breakpoint()
+
     def inputs(self):
         return {
             'mass': 'float'}
