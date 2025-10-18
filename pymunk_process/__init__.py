@@ -19,7 +19,7 @@ def register_types(core):
     # One schema that works for both circles and segments
     pymunk_agent = {
         # if your TS supports enum, use 'enum[circle, segment]'; otherwise keep string
-        'type': 'string',   # 'circle' or 'segment'
+        'type': 'enum[circle,segment]',   # 'circle' or 'segment'
         'mass': 'float',
         'radius': 'float',  # used by both circle and segment (segment = capsule radius)
 

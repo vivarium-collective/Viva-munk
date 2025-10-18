@@ -180,12 +180,12 @@ def get_mother_machine_config(
 
 def run_pymunk_experiment():
     initial_state = make_initial_state(
-        n_circles=5,
+        n_circles=500,
         n_segments=5,
         env_size=600,
         seed=42,              # optional for reproducibility
         elasticity=0.0,
-        circle_radius_range=(15, 25),
+        circle_radius_range=(1, 10),
         segment_length_range=(50, 80),
         segment_radius_range=(10, 20)
     )
@@ -195,7 +195,7 @@ def run_pymunk_experiment():
     steps = 600
     config = {
         'env_size': 600,
-        'gravity': -9.81,
+        'gravity': 0, #-9.81,
         'elasticity': 0.1,
     }
 
