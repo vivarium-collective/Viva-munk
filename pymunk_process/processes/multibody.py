@@ -170,32 +170,8 @@ class PymunkProcess(Process):
             self.space.step(dt)
 
         update = {
-            'agents': self.capture_state()
+            'agents': self.get_state_update()
         }
-        #
-        # for body in self.space.bodies:
-        #     print("Body ID:", id(body))
-        #     print("Position:", body.position)
-        #     print("Velocity:", body.velocity)
-        #     print("Mass:", body.mass)
-        #     print("Angle:", body.angle)
-        #
-        # print("\n")
-        # for shape in self.space.shapes:
-        #     if shape.body.body_type == pymunk.Body.STATIC:
-        #         continue
-        #
-        #     print("Shape Type:", type(shape))
-        #     print("Body Position:", shape.body.position)  # Position is stored in the body, not the shape
-        #     if isinstance(shape, pymunk.Segment):
-        #         print("Segment Start:", shape.a)
-        #         print("Segment End:", shape.b)
-        #         print("Thickness:", shape.radius)
-
-        # print(inputs['agents'].keys())
-        # if len(inputs['agents']) > 1:
-        #     x=1
-        #     pass
 
         return update
 
@@ -340,27 +316,28 @@ class PymunkProcess(Process):
             'length': length,
         }
 
-    def capture_state(self):
+    def get_state_update(self):
         state = {}
         for agent_id, obj in self.agents.items():
             if obj['type'] == 'circle':
+
                 state[agent_id] = {
                     'type': obj['type'],
                     'location': (obj['body'].position.x, obj['body'].position.y),
                     'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
-                    'mass': obj['body'].mass,
+                    # 'mass': obj['body'].mass,
                     'inertia': obj['body'].moment,
-                    'radius': obj['shape'].radius
+                    # 'radius': obj['shape'].radius
                 }
             elif obj['type'] == 'segment':
                 state[agent_id] = {
                     'type': obj['type'],
                     'location': (obj['body'].position.x, obj['body'].position.y),
                     'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
-                    'mass': obj['body'].mass,
+                    # 'mass': obj['body'].mass,
                     'inertia': obj['body'].moment,
-                    'length': obj['length'],
-                    'radius': obj['shape'].radius,
+                    # 'length': obj['length'],
+                    # 'radius': obj['shape'].radius,
                     'angle': obj['body'].angle
                 }
         return state

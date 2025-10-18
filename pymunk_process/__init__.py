@@ -28,9 +28,15 @@ def register_types(core):
         'angle':  {'_type': 'float', '_default': 0.0},
 
         # Common mechanical/visual fields
-        'inertia':   {'_type': 'float', '_default': float('inf')},
-        'location':  ('float', 'float'),
-        'velocity':  ('float', 'float'),
+        'inertia':   {'_type': 'float', '_default': float('inf'), '_apply': 'set'},
+        'location':  (
+            {'_type': 'float', '_apply': 'set'},
+            {'_type': 'float', '_apply': 'set'}
+        ),
+        'velocity':  (
+            {'_type': 'float', '_apply': 'set'},
+            {'_type': 'float', '_apply': 'set'}
+        ),
         'elasticity': {'_type': 'float', '_default': 0.0},
         'friction':   {'_type': 'float', '_default': 0.8},
     }
