@@ -6,6 +6,7 @@ import copy
 import random
 import math
 
+from bigraph_viz import plot_bigraph
 from process_bigraph import Composite, gather_emitter_results
 from process_bigraph.emitter import emitter_from_wires
 from pymunk_process import get_pymunk_core, PymunkProcess
@@ -198,6 +199,7 @@ def run_pymunk_experiment():
                     'time': ['global_time']}
     emitter_state = emitter_from_wires(emitter_spec)
 
+    # complete document
     doc = {
         'state': {
             **initial_state,
@@ -206,7 +208,29 @@ def run_pymunk_experiment():
         }
     }
 
+    # create the composite simulation
     sim = Composite(doc, core=PYMUNK_CORE)
+
+    # Save composition JSON
+    name = 'pymunk_growth_division'
+    sim.save(filename=f'{name}.json', outdir='out')
+
+    # Save visualization of the initial composition
+    plot_state = {k: v for k, v in sim.state.items() if k not in ['global_time', 'emitter']}
+    plot_schema = {k: v for k, v in sim.composition.items() if k not in ['global_time', 'emitter']}
+
+    plot_bigraph(
+        state=plot_state,
+        schema=plot_schema,
+        core=PYMUNK_CORE,
+        out_dir='out',
+        filename=f'{name}_viz',
+        dpi='300',
+        collapse_redundant_processes=True
+    )
+
+
+    # run the simulation
     total_time = interval * steps
     sim.run(total_time)
     results = gather_emitter_results(sim)[('emitter',)]
