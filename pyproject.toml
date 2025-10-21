@@ -1,0 +1,25 @@
+[project]
+name = "pymunk-process"
+version = "0.0.1"
+description = "a vivarium process for pymunk 2d physics simulations"
+readme = "README.md"
+requires-python = ">=3.7"
+authors = [
+  {name = "Eran Agmon"},
+  {name = "Ryan Spangler"}
+]
+dependencies = [
+    "process-bigraph",
+    "bigraph-viz",
+    "pymunk",
+
+    "pytest",
+    "ipdb",
+    "setuptools",
+    "twine>=4.0.2",
+]
+
+[tool.setuptools]
+packages = [
+    "pymunk_process"
+]
