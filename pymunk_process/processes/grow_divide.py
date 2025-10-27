@@ -2,6 +2,7 @@
 growth and division
 """
 from process_bigraph import Process, default
+from pymunk_process.processes.multibody import build_microbe, daughter_locations
 
 def get_grow_divide_schema(core, config=None):
     config = config or core.default(GrowDivide.config_schema)

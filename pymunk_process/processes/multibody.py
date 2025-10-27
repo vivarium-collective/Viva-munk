@@ -384,6 +384,209 @@ class PymunkProcess(Process):
                 }
         return state
 
+import math
+import uuid
+import random
+
+# -------------------------
+# Utilities
+# -------------------------
+
+def make_id(prefix='id', nhex=6):
+    return f"{prefix}_{uuid.uuid4().hex[:nhex]}"
+
+def make_rng(seed=None):
+    return random.Random(seed)
+
+# -------------------------
+# Mass/geometry conversions
+# -------------------------
+
+def circle_mass_from_radius(radius, density):
+    # m = ρ π r^2
+    return float(density) * math.pi * (float(radius) ** 2)
+
+def circle_radius_from_mass(mass, density):
+    # r = sqrt(m / (ρ π))
+    return math.sqrt(float(mass) / (float(density) * math.pi))
+
+def capsule_mass_from_length_radius(length, radius, density):
+    # Approximate capsule as rectangle length L and diameter 2r:
+    # m = ρ * (2r) * L  (ignoring hemispherical ends for simplicity; good for L >> r)
+    return float(density) * (2.0 * float(radius)) * float(length)
+
+def capsule_length_from_mass(mass, radius, density):
+    # L = m / (ρ * 2r)
+    return float(mass) / (float(density) * (2.0 * float(radius)))
+
+# -------------------------
+# Primitive builders (single objects)
+# - Accept explicit geometry/mass; if one is missing, infer from density.
+# - Velocity can be set directly, or drawn from (speed_range, heading).
+# -------------------------
+
+def build_particle(
+    rng,
+    env_size,
+    *,
+    elasticity=0.0,
+    id_prefix='p',
+    # position
+    x=None, y=None, margin=5.0,
+    # kinematics
+    velocity=None, speed_range=(0.0, 10.0),
+    # geometry / mass (circle)
+    radius=None, mass=None, density=0.015
+):
+    # derive geometry/mass if needed
+    if radius is None and mass is None:
+        radius = rng.uniform(1.0, 10.0)
+    if mass is None:
+        mass = circle_mass_from_radius(radius, density)
+    if radius is None:
+        radius = circle_radius_from_mass(mass, density)
+
+    # position
+    if x is None or y is None:
+        r = radius
+        x = rng.uniform(margin + r, env_size - (margin + r))
+        y = rng.uniform(margin + r, env_size - (margin + r))
+
+    # velocity
+    if velocity is None:
+        speed = rng.uniform(*speed_range)
+        theta = rng.uniform(0, 2 * math.pi)
+        vx, vy = speed * math.cos(theta), speed * math.sin(theta)
+    else:
+        vx, vy = velocity
+
+    return make_id(id_prefix), {
+        'type': 'circle',
+        'mass': float(mass),
+        'radius': float(radius),
+        'location': (float(x), float(y)),
+        'velocity': (float(vx), float(vy)),
+        'elasticity': float(elasticity),
+    }
+
+def build_microbe(
+    rng,
+    env_size,
+    *,
+    agent_id=None,          # <-- optional explicit id
+    elasticity=0.0,
+    id_prefix='a',
+    # placement & bounds
+    x=None, y=None, angle=None, margin=5.0,
+    # kinematics
+    velocity=None, speed_range=(0.0, 0.4),
+    # geometry / mass (capsule segment)
+    length=None, radius=None, mass=None, density=0.02,
+    length_range=(40.0, 120.0), radius_range=(6.0, 24.0),
+):
+    if length is None and mass is None:
+        length = rng.uniform(*length_range)
+    if radius is None:
+        radius = rng.uniform(*radius_range)
+
+    if mass is None:
+        mass = capsule_mass_from_length_radius(length, radius, density)
+    if length is None:
+        length = capsule_length_from_mass(mass, radius, density)
+
+    if angle is None:
+        angle = rng.uniform(-math.pi, math.pi)
+
+    dx, dy = (length / 2.0) * math.cos(angle), (length / 2.0) * math.sin(angle)
+    pad = radius + margin
+    if x is None or y is None:
+        x = rng.uniform(pad + abs(dx), env_size - (pad + abs(dx)))
+        y = rng.uniform(pad + abs(dy), env_size - (pad + abs(dy)))
+
+    if velocity is None:
+        speed = rng.uniform(*speed_range)
+        phi = rng.uniform(0, 2 * math.pi)
+        vx, vy = speed * math.cos(phi), speed * math.sin(phi)
+    else:
+        vx, vy = velocity
+
+    _id = agent_id or make_id(id_prefix)
+    return _id, {
+        'id': _id,                 # <-- include id in the object
+        'type': 'segment',
+        'mass': float(mass),
+        'length': float(length),
+        'radius': float(radius),
+        'angle': float(angle),
+        'location': (float(x), float(y)),
+        'velocity': (float(vx), float(vy)),
+        'elasticity': float(elasticity),
+    }
+
+# -------------------------
+# Placers (collections)
+# -------------------------
+
+def circles_overlap(c1, c2, extra_gap=0.0):
+    (x1, y1), r1 = c1['location'], c1['radius']
+    (x2, y2), r2 = c2['location'], c2['radius']
+    dx, dy = x1 - x2, y1 - y2
+    return (dx*dx + dy*dy) < (r1 + r2 + extra_gap) ** 2
+
+def place_circles(
+    rng, env_size, n,
+    *,
+    margin=5.0,
+    avoid_overlap=True,
+    extra_gap=2.0,
+    max_tries=200,
+    particle_kwargs=None
+):
+    particle_kwargs = dict(particle_kwargs or {})
+    placed = []
+    out = {}
+    for _ in range(n):
+        if avoid_overlap:
+            for _try in range(max_tries):
+                pid, cand = build_particle(rng, env_size, margin=margin, **particle_kwargs)
+                if all(not circles_overlap(cand, prev, extra_gap) for prev in placed):
+                    placed.append(cand)
+                    out[pid] = cand
+                    break
+            else:
+                pid, cand = build_particle(rng, env_size, margin=margin, **particle_kwargs)
+                placed.append(cand)
+                out[pid] = cand
+        else:
+            pid, cand = build_particle(rng, env_size, margin=margin, **particle_kwargs)
+            placed.append(cand)
+            out[pid] = cand
+    return out
+
+def place_microbes(
+    rng, env_size, n,
+    *,
+    margin=5.0,
+    microbe_kwargs=None,
+    ids=None,                 # <-- optional list of ids (len == n)
+    id_factory=None,          # <-- optional callable -> str
+):
+    microbe_kwargs = dict(microbe_kwargs or {})
+    out = {}
+    for i in range(n):
+        agent_id = None
+        if ids is not None:
+            agent_id = ids[i]
+        elif id_factory is not None:
+            agent_id = id_factory(i)
+        aid, obj = build_microbe(rng, env_size, margin=margin, agent_id=agent_id, **microbe_kwargs)
+        out[aid] = obj
+    return out
+
+
+# -------------------------
+# High-level initializer
+# -------------------------
 
 def make_initial_state(
     n_microbes=2,
@@ -394,98 +597,56 @@ def make_initial_state(
     particles_key='particles',
     seed=None,
     elasticity=0.0,
-    # circle knobs
+    # particle defaults
     particle_radius_range=(1.0, 10.0),
-    particle_mass_density=0.015,   # mass ≈ density * π r²
+    particle_mass_density=0.015,
     particle_speed_range=(0.0, 10.0),
-    # segment knobs
+    # microbe defaults
     microbe_length_range=(40.0, 120.0),
     microbe_radius_range=(6.0, 24.0),
-    microbe_mass_density=0.02,     # mass ≈ density * length * (2r)
+    microbe_mass_density=0.02,
     microbe_speed_range=(0.0, 0.4),
-    # placement & overlap
+    # placement
     margin=5.0,
     avoid_overlap_circles=True,
     min_gap=2.0,
     max_tries_per_circle=200,
 ):
-    rng = random.Random(seed)
-    agents, particles = {}, {}
+    rng = make_rng(seed)
 
-    # --- helpers ---
-    def random_id(prefix):
-        return f"{prefix}_{uuid.uuid4().hex[:6]}"
+    particles = place_circles(
+        rng, env_size, n_particles,
+        margin=margin,
+        avoid_overlap=avoid_overlap_circles,
+        extra_gap=min_gap,
+        max_tries=max_tries_per_circle,
+        particle_kwargs=dict(
+            elasticity=elasticity,
+            density=particle_mass_density,
+            speed_range=particle_speed_range,
+            # you can override radius/mass/velocity here if desired
+            # radius=..., mass=..., velocity=(vx, vy), x=..., y=...
+        )
+    )
 
-    def rand_circle():
-        r = rng.uniform(*particle_radius_range)
-        x = rng.uniform(margin + r, env_size - (margin + r))
-        y = rng.uniform(margin + r, env_size - (margin + r))
-        speed = rng.uniform(*particle_speed_range)
-        theta = rng.uniform(0, 2 * math.pi)
-        vx, vy = speed * math.cos(theta), speed * math.sin(theta)
-        mass = particle_mass_density * math.pi * (r ** 2)
-        return {
-            'type': 'circle',
-            'mass': mass,
-            'radius': r,
-            'location': (x, y),
-            'velocity': (vx, vy),
-            'elasticity': elasticity,
-        }
-
-    def circles_overlap(c1, c2):
-        (x1, y1), r1 = c1['location'], c1['radius']
-        (x2, y2), r2 = c2['location'], c2['radius']
-        dx, dy = x1 - x2, y1 - y2
-        return (dx*dx + dy*dy) < (r1 + r2 + min_gap) ** 2
-
-    def place_circles(n):
-        placed = []
-        for _ in range(n):
-            if avoid_overlap_circles:
-                for _try in range(max_tries_per_circle):
-                    cand = rand_circle()
-                    if all(not circles_overlap(cand, prev) for prev in placed):
-                        placed.append(cand)
-                        break
-                else:
-                    placed.append(rand_circle())
-            else:
-                placed.append(rand_circle())
-        return placed
-
-    def rand_microbe(agent_id):
-        L = rng.uniform(*microbe_length_range)
-        rad = rng.uniform(*microbe_radius_range)
-        ang = rng.uniform(-math.pi, math.pi)
-        dx, dy = (L / 2) * math.cos(ang), (L / 2) * math.sin(ang)
-        pad = rad + margin
-        x = rng.uniform(pad + abs(dx), env_size - (pad + abs(dx)))
-        y = rng.uniform(pad + abs(dy), env_size - (pad + abs(dy)))
-        speed = rng.uniform(*microbe_speed_range)
-        phi = rng.uniform(0, 2 * math.pi)
-        vx, vy = speed * math.cos(phi), speed * math.sin(phi)
-        mass = microbe_mass_density * L * (2 * rad)
-        return {
-            'id': agent_id,
-            'type': 'segment',
-            'mass': mass,
-            'length': L,
-            'radius': rad,
-            'angle': ang,
-            'location': (x, y),
-            'velocity': (vx, vy),
-            'elasticity': elasticity,
-        }
-
-    # --- build objects ---
-    for c in place_circles(n_particles):
-        particles[random_id('p')] = c
-    for _ in range(n_microbes):
-        agent_id = random_id('a')
-        agents[agent_id] = rand_microbe(agent_id=agent_id)
+    agents = place_microbes(
+        rng, env_size, n_microbes,
+        margin=margin,
+        microbe_kwargs=dict(
+            elasticity=elasticity,
+            density=microbe_mass_density,
+            speed_range=microbe_speed_range,
+            length_range=microbe_length_range,
+            radius_range=microbe_radius_range,
+        ),
+        # e.g., fixed IDs:
+        # ids=[f"a_seed{i}" for i in range(n_microbes)],
+        # or dynamic:
+        # id_factory=lambda i: f"a_{uuid.uuid4().hex[:6]}",
+    )
 
     return {agents_key: agents, particles_key: particles}
+
 
 
 def get_mother_machine_config(
