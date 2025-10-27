@@ -476,13 +476,6 @@ def make_initial_state(
             'location': (x, y),
             'velocity': (vx, vy),
             'elasticity': elasticity,
-            'grow_divide': {
-                '_type': 'edge',
-                'address': 'local:GrowDivide',
-                'config': {'rate': 0.05},
-                'inputs': {'mass': ['mass']},
-                'outputs': {'mass': ['mass']},
-            }
         }
 
     # --- build objects ---

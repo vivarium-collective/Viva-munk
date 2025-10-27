@@ -37,25 +37,19 @@ def get_grow_divide_schema(core, config=None):
 
 class GrowDivide(Process):
     config_schema = {
-        'rate': 'float',
+        'rate': {'_type': 'float', '_default': 0.01},
         'threshold': {'_type': 'float', '_default': 100.0},
     }
-
-    # def initialize(self, config):
-    #     breakpoint()
 
     def inputs(self):
         return {
             'agent_id': 'string',
-            'agents': 'map'
-            # 'type': 'enum[circle,segment]',
-            # 'mass': 'float'
+            'agents': 'map[pymunk_agent]',
         }
 
     def outputs(self):
         return {
-            # 'mass': 'float',
-            'agents': 'map'
+            'agents': 'map[pymunk_agent]',
         }
 
     def update(self, state, interval):
@@ -76,25 +70,25 @@ class GrowDivide(Process):
             t = 'segment' if ('length' in agent and float(agent.get('length', 0.0)) > 0.0) else 'circle'
 
         update = {}
-        #
-        # if t == 'circle':
-        #     # Keep density constant: m = ρ * π r^2  => r ∝ sqrt(m)
-        #     r = float(agent.get('radius', 0.0))
-        #     if r > 0.0:
-        #         scale = (m_new / m) ** 0.5
-        #         r_new = r * scale
-        #         dr = r_new - r
-        #         update = {
-        #             agent_id: {
-        #                 'mass': dm,
-        #                 'radius': dr,
-        #                 # no change to location/angle here
-        #             }
-        #         }
-        #     else:
-        #         # fallback: just mass if radius missing/nonpositive
-        #         update = {agent_id: {'mass': dm}}
-        #
+
+        if t == 'circle':
+            # Keep density constant: m = ρ * π r^2  => r ∝ sqrt(m)
+            r = float(agent.get('radius', 0.0))
+            if r > 0.0:
+                scale = (m_new / m) ** 0.5
+                r_new = r * scale
+                dr = r_new - r
+                update = {
+                    agent_id: {
+                        'mass': dm,
+                        'radius': dr,
+                        # no change to location/angle here
+                    }
+                }
+            else:
+                # fallback: just mass if radius missing/nonpositive
+                update = {agent_id: {'mass': dm}}
+
         if t == 'segment':
             # Capsule with fixed radius, grow length: m = ρ * (2 r) * L  => L ∝ m (if r fixed)
             L = float(agent.get('length', 0.0))
@@ -106,18 +100,18 @@ class GrowDivide(Process):
                 update = {
                     agent_id: {
                         'mass': dm,
-                        'length': dL,
+                        'length': L_new,
                         # keep radius fixed; angle/location unchanged
                     }
                 }
-        #     else:
-        #         # fallback: just mass if geometry missing
-        #         update = {agent_id: {'mass': dm}}
-        #
-        # # Threshold hook: leave division for later
-        # if m_new >= float(self.config.get('threshold', 100.0)):
-        #     # TODO: implement division (create two daughters, remove parent)
-        #     # For now, just keep growing; or you could clamp here if desired.
-        #     pass
+            else:
+                # fallback: just mass if geometry missing
+                update = {agent_id: {'mass': dm}}
+
+        # Threshold hook: leave division for later
+        if m_new >= float(self.config.get('threshold', 100.0)):
+            # TODO: implement division (create two daughters, remove parent)
+            # For now, just keep growing; or you could clamp here if desired.
+            pass
 
         return {'agents': update}

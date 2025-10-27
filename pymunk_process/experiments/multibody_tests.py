@@ -24,7 +24,7 @@ def run_pymunk_experiment():
     core = PYMUNK_CORE
     initial_state = make_initial_state(
         n_microbes=2,
-        n_particles=200,
+        n_particles=100,
         env_size=600,
         elasticity=0.0,
         particle_radius_range=(1, 10),
@@ -64,7 +64,7 @@ def run_pymunk_experiment():
     emitter_state = emitter_from_wires(emitter_spec)
 
     # grow and divide schema
-    cell_schema = get_grow_divide_schema(core=core, config={'agents_key': 'cells'})
+    cell_schema = get_grow_divide_schema(core=core, config={'agents_key': 'cells', 'rate': 0.01, 'threshold': 200.0})
 
     # complete document
     doc = {
