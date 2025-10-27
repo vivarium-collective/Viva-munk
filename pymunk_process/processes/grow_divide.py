@@ -16,6 +16,7 @@ def get_grow_divide_schema(core, config=None):
                     'config': default('quote', config),
                     '_inputs': {
                         'agent_id':'string',
+                        'type': 'enum[circle,segment]',
                         'mass': 'float',
                     },
                     '_outputs':  {
@@ -49,6 +50,7 @@ class GrowDivide(Process):
     def inputs(self):
         return {
             'agent_id': 'string',
+            'type': 'enum[circle,segment]',
             'mass': 'float'
         }
 

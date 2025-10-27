@@ -445,6 +445,7 @@ def make_initial_state(
         vx, vy = speed * math.cos(theta), speed * math.sin(theta)
         mass = particle_mass_density * math.pi * (r ** 2)
         return {
+            'type': 'circle',
             'mass': mass,
             'radius': r,
             'location': (x, y),
@@ -487,6 +488,7 @@ def make_initial_state(
         mass = microbe_mass_density * L * (2 * rad)
         return {
             'id': agent_id,
+            'type': 'segment',
             'mass': mass,
             'length': L,
             'radius': rad,

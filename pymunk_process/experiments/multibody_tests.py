@@ -23,13 +23,12 @@ PYMUNK_CORE = core_import(core)
 def run_pymunk_experiment():
     core = PYMUNK_CORE
     initial_state = make_initial_state(
-        n_microbes=1,
-        n_particles=500,
+        n_microbes=2,
+        n_particles=200,
         env_size=600,
-        seed=42,              # optional for reproducibility
         elasticity=0.0,
         particle_radius_range=(1, 10),
-        microbe_length_range=(50, 80),
+        microbe_length_range=(50, 100),
         microbe_radius_range=(10, 20)
     )
 
