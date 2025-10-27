@@ -11,26 +11,38 @@ from process_bigraph import Process
 
 
 def daughter_locations(parent_state):
+    """
+    Compute daughter cell locations based on the parent's position, angle, and geometry.
+    For segments: daughters are offset along the long axis.
+    For circles: daughters are offset along the parent's angle direction.
+    """
     p_loc = parent_state['location']
     p_angle = parent_state.get('angle', 0.0)
+    dtype = parent_state.get('type', 'circle')
 
-    if parent_state['type'] == 'segment':
-        # offset along the rod axis
-        parent_len = parent_state['length']
-        pos_ratios = (-0.35, 0.35)
-        offsets = [parent_len * r for r in pos_ratios]
-        dxs = [o * math.cos(p_angle) for o in offsets]
-        dys = [o * math.sin(p_angle) for o in offsets]
-        return [[p_loc[0] + dxs[0], p_loc[1] + dys[0]],
-                [p_loc[0] + dxs[1], p_loc[1] + dys[1]]]
+    # Position ratios: symmetric offsets around the parent center
+    pos_ratios = [-0.25, 0.25]
+    daughter_locs = []
 
-    # circle: offset along an arbitrary axis (use angle to keep consistent orientation over time)
-    r = parent_state['radius']
-    d = max(2*r*0.8, 1.0)  # try to separate daughters ~0.8 diameters
-    dx = (d/2) * math.cos(p_angle)
-    dy = (d/2) * math.sin(p_angle)
-    return [[p_loc[0] - dx, p_loc[1] - dy],
-            [p_loc[0] + dx, p_loc[1] + dy]]
+    if dtype == 'segment':
+        parent_length = float(parent_state.get('length', 1.0))
+        for ratio in pos_ratios:
+            dx = parent_length * ratio * math.cos(p_angle)
+            dy = parent_length * ratio * math.sin(p_angle)
+            loc = [p_loc[0] + dx, p_loc[1] + dy]
+            daughter_locs.append(loc)
+
+    else:  # circle or fallback
+        r = float(parent_state.get('radius', 1.0))
+        # separate daughters by roughly one diameter (0.8–1.0 is typical)
+        d = max(2 * r * 0.8, 1.0)
+        for ratio in (-0.5, 0.5):
+            dx = d * ratio * math.cos(p_angle)
+            dy = d * ratio * math.sin(p_angle)
+            loc = [p_loc[0] + dx, p_loc[1] + dy]
+            daughter_locs.append(loc)
+
+    return daughter_locs
 
 def local_impulse_point_for_shape(shape):
     """Return a random local point on the shape boundary in the body's local coords."""
