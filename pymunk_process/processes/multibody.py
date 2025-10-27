@@ -3,6 +3,7 @@ TODO: use an actual grow/divide process for demo
 """
 import random
 import math
+import uuid
 
 import pymunk
 
@@ -146,34 +147,95 @@ class PymunkProcess(Process):
 
     def inputs(self):
         return {
-            'agents': 'map[pymunk_agent]'  # make this map[enum[agent types]
+            'agents': 'map[pymunk_agent]',     # make this map[enum[agent types]
+            'particles': 'map[pymunk_agent]',  # these are simple particles, e.g. circles
         }
 
     def outputs(self):
         return {
-            'agents': 'map[pymunk_agent]' # make this map[enum[agent types]
+            'agents': 'map[pymunk_agent]',
+            'particles': 'map[pymunk_agent]', # these are simple particles, e.g. circles
         }
 
     def update(self, inputs, interval):
-        self.update_bodies(inputs['agents'])
+        """
+        Efficiently sync agents + particles without allocating a combined dict,
+        step the physics, then split outputs in one pass.
+        """
+        agents_in = inputs.get('agents', {}) or {}
+        particles_in = inputs.get('particles', {}) or {}
 
-        n_steps = int(self.config.get('substeps', 100))
-        dt = interval / n_steps
+        # sanity: IDs must be unique across ports this tick
+        overlap = set(agents_in) & set(particles_in)
+        if overlap:
+            raise ValueError(
+                f"PymunkProcess.update(): ID(s) present in both agents and particles: {sorted(overlap)}"
+            )
 
-        # per-step damping from per-second spec: d_step = dps ** dt
-        d_step = self.damping_per_second ** dt
+        agent_ids = set(agents_in)
+        particle_ids = set(particles_in)
+
+        # ------- sync bodies (no combined dict) -------
+        # local helper keeps all changes inside update()
+        def _sync_bodies_dual(agents_dict, particles_dict):
+            existing_ids = set(self.agents)
+            new_ids = set(agents_dict) | set(particles_dict)
+
+            # remove stale
+            for dead_id in existing_ids - new_ids:
+                body = self.agents[dead_id]['body']
+                shape = self.agents[dead_id]['shape']
+                self.space.remove(body, shape)
+                del self.agents[dead_id]
+
+            # add/update both maps (order doesn't matter)
+            for d in (agents_dict, particles_dict):
+                for _id, attrs in d.items():
+                    self.manage_object(_id, attrs)
+
+        _sync_bodies_dual(agents_in, particles_in)
+
+        # ------- integrate -------
+        n_steps = max(1, int(self.config.get('substeps', 100)))
+        dt = float(interval) / n_steps
+        d_step = self.damping_per_second ** max(dt, 0.0)
 
         for _ in range(n_steps):
             self.space.damping = d_step
             for body in self.space.bodies:
-                self.apply_jitter_force(body, dt)  # pass dt
+                self.apply_jitter_force(body, dt)
             self.space.step(dt)
 
-        update = {
-            'agents': self.get_state_update()
-        }
+        # ------- emit in one pass (no full_state build) -------
+        agents_out = {}
+        particles_out = {}
 
-        return update
+        for _id, obj in self.agents.items():
+            # only report objects that were present on this tick's inputs
+            # (keeps behavior consistent if you treat absence as deletion)
+            if _id in agent_ids or _id in particle_ids:
+                if obj['type'] == 'circle':
+                    rec = {
+                        'type': obj['type'],
+                        'location': (obj['body'].position.x, obj['body'].position.y),
+                        'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
+                        'inertia': obj['body'].moment,
+                    }
+                else:  # 'segment'
+                    rec = {
+                        'type': obj['type'],
+                        'location': (obj['body'].position.x, obj['body'].position.y),
+                        'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
+                        'inertia': obj['body'].moment,
+                        'angle': obj['body'].angle,
+                    }
+
+                if _id in agent_ids:
+                    agents_out[_id] = rec
+                elif _id in particle_ids:
+                    particles_out[_id] = rec
+
+        return {'agents': agents_out, 'particles': particles_out}
 
     def apply_jitter_force(self, body, dt):
         shape = next(iter(body.shapes)) if body.shapes else None
@@ -341,3 +403,143 @@ class PymunkProcess(Process):
                     'angle': obj['body'].angle
                 }
         return state
+
+
+def make_initial_state(
+    n_microbes=2,
+    n_particles=2,
+    env_size=600.0,
+    *,
+    agents_key='cells',
+    particles_key='particles',
+    seed=None,
+    elasticity=0.0,
+    # circle knobs
+    particle_radius_range=(1.0, 10.0),
+    particle_mass_density=0.015,   # mass ≈ density * π r²
+    particle_speed_range=(0.0, 10.0),
+    # segment knobs
+    microbe_length_range=(40.0, 120.0),
+    microbe_radius_range=(6.0, 24.0),
+    microbe_mass_density=0.02,     # mass ≈ density * length * (2r)
+    microbe_speed_range=(0.0, 0.4),
+    # placement & overlap
+    margin=5.0,
+    avoid_overlap_circles=True,
+    min_gap=2.0,
+    max_tries_per_circle=200,
+):
+    rng = random.Random(seed)
+    agents, particles = {}, {}
+
+    # --- helpers ---
+    def random_id(prefix):
+        return f"{prefix}_{uuid.uuid4().hex[:6]}"
+
+    def rand_circle():
+        r = rng.uniform(*particle_radius_range)
+        x = rng.uniform(margin + r, env_size - (margin + r))
+        y = rng.uniform(margin + r, env_size - (margin + r))
+        speed = rng.uniform(*particle_speed_range)
+        theta = rng.uniform(0, 2 * math.pi)
+        vx, vy = speed * math.cos(theta), speed * math.sin(theta)
+        mass = particle_mass_density * math.pi * (r ** 2)
+        return {
+            'mass': mass,
+            'radius': r,
+            'location': (x, y),
+            'velocity': (vx, vy),
+            'elasticity': elasticity,
+        }
+
+    def circles_overlap(c1, c2):
+        (x1, y1), r1 = c1['location'], c1['radius']
+        (x2, y2), r2 = c2['location'], c2['radius']
+        dx, dy = x1 - x2, y1 - y2
+        return (dx*dx + dy*dy) < (r1 + r2 + min_gap) ** 2
+
+    def place_circles(n):
+        placed = []
+        for _ in range(n):
+            if avoid_overlap_circles:
+                for _try in range(max_tries_per_circle):
+                    cand = rand_circle()
+                    if all(not circles_overlap(cand, prev) for prev in placed):
+                        placed.append(cand)
+                        break
+                else:
+                    placed.append(rand_circle())
+            else:
+                placed.append(rand_circle())
+        return placed
+
+    def rand_microbe(agent_id):
+        L = rng.uniform(*microbe_length_range)
+        rad = rng.uniform(*microbe_radius_range)
+        ang = rng.uniform(-math.pi, math.pi)
+        dx, dy = (L / 2) * math.cos(ang), (L / 2) * math.sin(ang)
+        pad = rad + margin
+        x = rng.uniform(pad + abs(dx), env_size - (pad + abs(dx)))
+        y = rng.uniform(pad + abs(dy), env_size - (pad + abs(dy)))
+        speed = rng.uniform(*microbe_speed_range)
+        phi = rng.uniform(0, 2 * math.pi)
+        vx, vy = speed * math.cos(phi), speed * math.sin(phi)
+        mass = microbe_mass_density * L * (2 * rad)
+        return {
+            'id': agent_id,
+            'mass': mass,
+            'length': L,
+            'radius': rad,
+            'angle': ang,
+            'location': (x, y),
+            'velocity': (vx, vy),
+            'elasticity': elasticity,
+            'grow_divide': {
+                '_type': 'edge',
+                'address': 'local:GrowDivide',
+                'config': {'rate': 0.05},
+                'inputs': {'mass': ['mass']},
+                'outputs': {'mass': ['mass']},
+            }
+        }
+
+    # --- build objects ---
+    for c in place_circles(n_particles):
+        particles[random_id('p')] = c
+    for _ in range(n_microbes):
+        agent_id = random_id('a')
+        agents[agent_id] = rand_microbe(agent_id=agent_id)
+
+    return {agents_key: agents, particles_key: particles}
+
+
+def get_mother_machine_config(
+    env_size=600,
+    spacer_thickness=5,
+    channel_height=500,
+    channel_space=50
+):
+    barriers = []
+    y_start = 0  # Start at the bottom of the environment
+    y_end = channel_height  # Height of the channel
+
+    # Calculate how many barriers can fit within the env_size
+    num_channels = int(env_size / (spacer_thickness + channel_space))
+
+    # Generate barriers based on calculated number
+    x_position = spacer_thickness + channel_space
+    for _ in range(num_channels):
+        barrier = {
+            'start': (x_position, y_start),
+            'end': (x_position, y_end),
+            'thickness': spacer_thickness
+        }
+        barriers.append(barrier)
+
+        # Update x_position for the next barrier, adding the space for the channel
+        x_position += spacer_thickness + channel_space
+
+    return {
+        'env_size': env_size,
+        'barriers': barriers
+    }

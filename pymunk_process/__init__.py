@@ -45,8 +45,8 @@ def register_types(core):
 
 
 def register_processes(core):
-    core.process_registry.register('pymunk_process', PymunkProcess)
-    core.process_registry.register('grow_divide', GrowDivide)
+    core.process_registry.register('PymunkProcess', PymunkProcess)
+    core.process_registry.register('GrowDivide', GrowDivide)
 
 
 def core_import(core=None, config=None):

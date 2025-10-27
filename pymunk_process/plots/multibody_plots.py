@@ -34,7 +34,85 @@ def _bbox_outside(px_bbox, img_bbox, pad_px):
     return (x1 < ix0 - pad_px or x0 > ix1 + pad_px or
             y1 < iy0 - pad_px or y0 > iy1 + pad_px)
 
+
+# ---- generic plot-layer merging ----
+
+def _infer_plot_type(o):
+    # Prefer explicit 'type' if present and valid
+    t = o.get('type')
+    if t in ('circle', 'segment'):
+        return t
+    # Infer from fields
+    if 'radius' in o and 'length' in o:
+        return 'segment'
+    if 'radius' in o and 'length' not in o:
+        return 'circle'
+    return None
+
+def _is_plot_entity(o):
+    if not isinstance(o, dict):
+        return False
+    loc = o.get('location')
+    if not (isinstance(loc, (tuple, list)) and len(loc) == 2):
+        return False
+    return _infer_plot_type(o) is not None
+
+def _is_entity_map(v):
+    # A plotting layer is a dict whose values are plot-entities (allow empty)
+    return isinstance(v, dict) and all(_is_plot_entity(x) for x in v.values())
+
+def merge_plot_layers(data, merged_key='agents'):
+    """
+    For each frame (dict), find any dict-of-entities and merge them under `merged_key`.
+    If `merged_key` exists already, it will be used as the base and augmented.
+    ID collisions are resolved by prefixing with the original source key.
+    """
+    merged_frames = []
+    for step in data:
+        # Shallow copy step so we don't mutate caller data
+        step_out = dict(step)
+        base = dict(step_out.get(merged_key, {}))
+        # Find all entity maps in this frame
+        entity_sources = []
+        for k, v in step.items():
+            if k == merged_key:
+                continue
+            if _is_entity_map(v):
+                entity_sources.append((k, v))
+
+        # If nothing to merge, keep the frame as-is
+        if not entity_sources:
+            merged_frames.append(step_out)
+            continue
+
+        # Merge, resolving collisions by prefixing with source key
+        existing_ids = set(base.keys())
+        for src_key, src_map in entity_sources:
+            for ent_id, ent in src_map.items():
+                out_id = ent_id
+                if out_id in existing_ids:
+                    out_id = f"{src_key}:{ent_id}"
+                # Ensure type is present (gif code may rely on it)
+                if 'type' not in ent or ent['type'] not in ('circle', 'segment'):
+                    t = _infer_plot_type(ent)
+                    if t is not None:
+                        ent = {**ent, 'type': t}
+                base[out_id] = ent
+                existing_ids.add(out_id)
+
+        # Write merged layer and drop the sources we merged
+        step_out[merged_key] = base
+        for src_key, _ in entity_sources:
+            if src_key != merged_key:
+                step_out.pop(src_key, None)
+
+        merged_frames.append(step_out)
+
+    return merged_frames
+
+
 # ---------- main renderer ----------
+
 
 def simulation_to_gif(
     data,
@@ -59,6 +137,9 @@ def simulation_to_gif(
       - artist pooling (no add/remove)
       - background blitting (no full redraw per frame)
     """
+    # ---- merge any plot-capable layers into one
+    if isinstance(data, (list, tuple)) and data:
+        data = merge_plot_layers(data, merged_key=agents_key)
     # ---- paths
     os.makedirs(out_dir, exist_ok=True)
     filename = _ensure_gif_filename(filename)
