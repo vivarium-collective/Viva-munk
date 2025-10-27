@@ -1,8 +1,10 @@
 """
 growth and division
 """
+import math
 from process_bigraph import Process, default
 from pymunk_process.processes.multibody import build_microbe, daughter_locations
+
 
 def get_grow_divide_schema(core, config=None):
     config = config or core.default(GrowDivide.config_schema)
@@ -71,7 +73,6 @@ class GrowDivide(Process):
             t = 'segment' if ('length' in agent and float(agent.get('length', 0.0)) > 0.0) else 'circle'
 
         update = {}
-
         if t == 'circle':
             # Keep density constant: m = ρ * π r^2  => r ∝ sqrt(m)
             r = float(agent.get('radius', 0.0))
@@ -109,10 +110,67 @@ class GrowDivide(Process):
                 # fallback: just mass if geometry missing
                 update = {agent_id: {'mass': dm}}
 
-        # Threshold hook: leave division for later
-        if m_new >= float(self.config.get('threshold', 100.0)):
-            # TODO: implement division (create two daughters, remove parent)
-            # For now, just keep growing; or you could clamp here if desired.
-            pass
+        # --- Division ---
+        if m_new >= float(self.config['threshold']):
+            half_mass = 0.5 * m_new
+            loc1, loc2 = daughter_locations(agent)
+            inherit_keys = [
+                'elasticity', 'friction', 'angle', 'radius', 'length', 'velocity', 'type'
+            ]
+            base = {k: agent[k] for k in inherit_keys if k in agent}
 
-        return {'agents': update}
+            # small velocity nudges to separate daughters
+            vx, vy = agent.get('velocity', (0.0, 0.0))
+            angle = float(agent.get('angle', 0.0))
+            eps_perp = 0.1  # circle: nudge perpendicular to "angle"
+            eps_axis = 0.1  # segment: nudge along the rod axis
+
+            if t == 'segment':
+                L = float(agent.get('length', 1.0)) or 1.0
+                r = float(agent.get('radius', 1.0)) or 1.0
+                # constant density, fixed radius => L_d = L * ((m_new/2)/m)
+                L_d = L * (half_mass / m)
+
+                # axis nudge
+                dvx = eps_axis * math.cos(angle)
+                dvy = eps_axis * math.sin(angle)
+
+                d1 = dict(base)
+                d1.update({
+                    'type': 'segment',
+                    'mass': half_mass,
+                    'length': L_d,
+                    'radius': r,
+                    'angle': angle,
+                    'location': (float(loc1[0]), float(loc1[1])),
+                    'velocity': (float(vx + dvx), float(vy + dvy)),
+                })
+
+                d2 = dict(base)
+                d2.update({
+                    'type': 'segment',
+                    'mass': half_mass,
+                    'length': L_d,
+                    'radius': r,
+                    'angle': angle,
+                    'location': (float(loc2[0]), float(loc2[1])),
+                    'velocity': (float(vx - dvx), float(vy - dvy)),
+                })
+
+                # IDs for daughters: deterministic suffixes are handy for debugging
+            d1_id = f"{agent_id}_0"
+            d2_id = f"{agent_id}_1"
+            d1['id'] = d1_id
+            d2['id'] = d2_id
+
+            if not '_add 'in update:
+                update['_add'] = {}
+            update['_add'][d1_id] = d1
+            update['_add'][d2_id] = d2
+            if not '_remove' in update:
+                update['_remove'] = []
+            update['_remove'].append(agent_id)
+
+        return {
+            'agents': update
+        }
