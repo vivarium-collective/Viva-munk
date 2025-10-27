@@ -10,26 +10,6 @@ import pymunk
 from process_bigraph import Process
 
 
-# def random_body_position(body):
-#     ''' Pick a random point along the boundary of the body (rectangle) '''
-#     length = body.length
-#     width = body.width
-#     edge = random.choice(['left', 'right', 'bottom', 'top'])
-#
-#     if edge == 'left':
-#         # Random point along the left vertical edge
-#         return (0, random.uniform(0, length))
-#     elif edge == 'right':
-#         # Random point along the right vertical edge
-#         return (width, random.uniform(0, length))
-#     elif edge == 'bottom':
-#         # Random point along the bottom horizontal edge
-#         return (random.uniform(0, width), 0)
-#     elif edge == 'top':
-#         # Random point along the top horizontal edge
-#         return (random.uniform(0, width), length)
-
-
 def daughter_locations(parent_state):
     p_loc = parent_state['location']
     p_angle = parent_state.get('angle', 0.0)
