@@ -125,9 +125,35 @@ class GrowDivide(Process):
             eps_perp = 0.1  # circle: nudge perpendicular to "angle"
             eps_axis = 0.1  # segment: nudge along the rod axis
 
-            if t == 'segment':
-                L = float(agent.get('length', 1.0)) or 1.0
+            if t == 'circle':
+                # constant density => r_d = r * sqrt((m_new/2)/m)
                 r = float(agent.get('radius', 1.0)) or 1.0
+                r_d = r * (half_mass / m) ** 0.5
+
+                # perpendicular nudge
+                dvx = eps_perp * math.cos(angle + math.pi / 2.0)
+                dvy = eps_perp * math.sin(angle + math.pi / 2.0)
+
+                d1 = dict(base)
+                d1.update({
+                    'type': 'circle',
+                    'mass': half_mass,
+                    'radius': r_d,
+                    'location': (float(loc1[0]), float(loc1[1])),
+                    'velocity': (float(vx + dvx), float(vy + dvy)),
+                })
+
+                d2 = dict(base)
+                d2.update({
+                    'type': 'circle',
+                    'mass': half_mass,
+                    'radius': r_d,
+                    'location': (float(loc2[0]), float(loc2[1])),
+                    'velocity': (float(vx - dvx), float(vy - dvy)),
+                })
+            elif t == 'segment':
+                L = float(agent['length'])
+                r = float(agent['radius'])
                 # constant density, fixed radius => L_d = L * ((m_new/2)/m)
                 L_d = L * (half_mass / m)
 
