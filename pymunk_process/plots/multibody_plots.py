@@ -6,6 +6,35 @@ from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Circle
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.lines import Line2D
+
+class LineWidthData(Line2D):
+    """
+    A Line2D whose linewidth is specified in *data units* (world units),
+    not points. We convert to points on-the-fly using the axes transform.
+    """
+    def __init__(self, *args, **kwargs):
+        _lw_data = kwargs.pop('linewidth', 1.0)
+        super().__init__(*args, **kwargs)
+        self._lw_data = float(_lw_data)
+
+    def _get_lw(self):
+        # Convert data-units linewidth -> points for Matplotlib
+        if self.axes is None:
+            return 1.0
+        # pixels per data unit in y (equal aspect -> same in x)
+        x0, y0 = self.axes.transData.transform((0, 0))
+        x1, y1 = self.axes.transData.transform((0, 1))
+        px_per_data = abs(y1 - y0)
+        ppd = 72.0 / self.axes.figure.dpi  # points per pixel
+        return max(0.1, px_per_data * self._lw_data * ppd)
+
+    def _set_lw(self, lw):
+        # Set desired linewidth in *data units*
+        self._lw_data = float(lw)
+
+    _linewidth = property(_get_lw, _set_lw)
+
 
 # ---------- small helpers ----------
 
@@ -34,6 +63,83 @@ def _bbox_outside(px_bbox, img_bbox, pad_px):
     return (x1 < ix0 - pad_px or x0 > ix1 + pad_px or
             y1 < iy0 - pad_px or y0 > iy1 + pad_px)
 
+
+# ---- generic plot-layer merging ----
+
+def _infer_plot_type(o):
+    # Prefer explicit 'type' if present and valid
+    t = o.get('type')
+    if t in ('circle', 'segment'):
+        return t
+    # Infer from fields
+    if 'radius' in o and 'length' in o:
+        return 'segment'
+    if 'radius' in o and 'length' not in o:
+        return 'circle'
+    return None
+
+def _is_plot_entity(o):
+    if not isinstance(o, dict):
+        return False
+    loc = o.get('location')
+    if not (isinstance(loc, (tuple, list)) and len(loc) == 2):
+        return False
+    return _infer_plot_type(o) is not None
+
+def _is_entity_map(v):
+    # A plotting layer is a dict whose values are plot-entities (allow empty)
+    return isinstance(v, dict) and all(_is_plot_entity(x) for x in v.values())
+
+def merge_plot_layers(data, merged_key='agents'):
+    """
+    For each frame (dict), find any dict-of-entities and merge them under `merged_key`.
+    If `merged_key` exists already, it will be used as the base and augmented.
+    ID collisions are resolved by prefixing with the original source key.
+    """
+    merged_frames = []
+    for step in data:
+        # Shallow copy step so we don't mutate caller data
+        step_out = dict(step)
+        base = dict(step_out.get(merged_key, {}))
+        # Find all entity maps in this frame
+        entity_sources = []
+        for k, v in step.items():
+            if k == merged_key:
+                continue
+            if _is_entity_map(v):
+                entity_sources.append((k, v))
+
+        # If nothing to merge, keep the frame as-is
+        if not entity_sources:
+            merged_frames.append(step_out)
+            continue
+
+        # Merge, resolving collisions by prefixing with source key
+        existing_ids = set(base.keys())
+        for src_key, src_map in entity_sources:
+            for ent_id, ent in src_map.items():
+                out_id = ent_id
+                if out_id in existing_ids:
+                    out_id = f"{src_key}:{ent_id}"
+                # Ensure type is present (gif code may rely on it)
+                if 'type' not in ent or ent['type'] not in ('circle', 'segment'):
+                    t = _infer_plot_type(ent)
+                    if t is not None:
+                        ent = {**ent, 'type': t}
+                base[out_id] = ent
+                existing_ids.add(out_id)
+
+        # Write merged layer and drop the sources we merged
+        step_out[merged_key] = base
+        for src_key, _ in entity_sources:
+            if src_key != merged_key:
+                step_out.pop(src_key, None)
+
+        merged_frames.append(step_out)
+
+    return merged_frames
+
+
 # ---------- main renderer ----------
 
 def simulation_to_gif(
@@ -59,6 +165,10 @@ def simulation_to_gif(
       - artist pooling (no add/remove)
       - background blitting (no full redraw per frame)
     """
+    # ---- merge any plot-capable layers into one
+    if isinstance(data, (list, tuple)) and data:
+        data = merge_plot_layers(data, merged_key=agents_key)
+
     # ---- paths
     os.makedirs(out_dir, exist_ok=True)
     filename = _ensure_gif_filename(filename)
@@ -88,12 +198,11 @@ def simulation_to_gif(
     ypix_per_unit = _pixels_per_data_y(ax)
 
     # World->pixel scale (assumes square world)
-    # For square axes with equal aspect, 1 world-unit maps to ypix_per_unit pixels vertically.
-    # We'll use that for thickness clamping and barrier widths.
     img_bbox = (0, 0, fig.canvas.get_width_height()[0]-1, H-1)
     pad_px = int(round(world_pad * ypix_per_unit))
 
-    # ---- static barriers once (pixel linewidth, clamped)
+    # ---- static barriers once (pixel linewidth, clamped -> points)
+    dpi_fig = fig.dpi
     barrier_artists = []
     for b in barriers:
         (sx, sy), (ex, ey) = b['start'], b['end']
@@ -101,7 +210,8 @@ def simulation_to_gif(
             continue
         t_world = float(b.get('thickness', 1.0))
         lw_px = max(1, min(int(round(t_world * ypix_per_unit)), max_line_px))
-        art = Line2D([sx, ex], [sy, ey], linewidth=lw_px, color='gray', antialiased=False)
+        lw_pt = lw_px * 72.0 / dpi_fig
+        art = Line2D([sx, ex], [sy, ey], linewidth=lw_pt, color='gray', antialiased=False)
         ax.add_line(art)
         barrier_artists.append(art)
 
@@ -122,8 +232,12 @@ def simulation_to_gif(
 
     segment_pool = []
     for _ in range(max_segments):
-        ln = Line2D([0, 0], [0, 0], linewidth=1.0, solid_capstyle='round',
-                    antialiased=False, visible=False)
+        # Use LineWidthData with rounded caps; linewidth is set in *data units* per-frame
+        ln = LineWidthData([0, 0], [0, 0],
+                           linewidth=1.0,
+                           solid_capstyle='round',
+                           antialiased=False,
+                           visible=False)
         ax.add_line(ln)
         segment_pool.append(ln)
 
@@ -150,8 +264,6 @@ def simulation_to_gif(
             rpx = max(1, min(rpx_nom, max_radius_px))
 
             # pixel bbox for culling
-            # Map to pixel space via Axes transform (faster to approximate using world->pixel scale vertically)
-            # We'll compute bbox in pixel coordinates using transform + clamp
             px0, py0 = ax.transData.transform((cx - r_world, cy - r_world))
             px1, py1 = ax.transData.transform((cx + r_world, cy + r_world))
             bbox_px = (int(px0), int(py0), int(px1), int(py1))
@@ -164,7 +276,6 @@ def simulation_to_gif(
             art.set_radius(r_world)  # keep radius in data coords
             art.set_visible(True)
             c_vis += 1
-
             if c_vis >= len(circle_pool):
                 break
 
@@ -173,7 +284,7 @@ def simulation_to_gif(
             if circle_pool[i].get_visible():
                 circle_pool[i].set_visible(False)
 
-        # Segments
+        # Segments (capsules)
         for o in (x for x in step[agents_key].values() if x.get('type') == 'segment'):
             L = float(o['length'])
             r_world = float(o['radius'])
@@ -182,33 +293,38 @@ def simulation_to_gif(
             if not _finite(cx, cy, L, r_world, ang) or L <= 0 or r_world <= 0:
                 continue
 
-            dx = cos(ang) * (L/2.0)
-            dy = sin(ang) * (L/2.0)
-            x0w, y0w = cx - dx, cy - dy
-            x1w, y1w = cx + dx, cy + dy
+            # Trim the straight segment by one radius on each end
+            half = 0.5 * L
+            length_offset = max(half - r_world, 0.0)
+            dx_axis = math.cos(ang) * length_offset
+            dy_axis = math.sin(ang) * length_offset
+            x0w, y0w = cx - dx_axis, cy - dy_axis
+            x1w, y1w = cx + dx_axis, cy + dy_axis
 
-            # pixel linewidth (diameter; clamped)
-            lw_nom = int(round(2.0 * r_world * ypix_per_unit))
-            lw_px = max(1, min(lw_nom, max_line_px))
+            # pixel linewidth target (2*radius), clamped
+            lw_nom_px = int(round(2.0 * r_world * ypix_per_unit))
+            lw_px = max(1, min(lw_nom_px, max_line_px))
+            # convert clamped pixel thickness back to data units for LineWidthData
+            lw_data = lw_px / max(ypix_per_unit, 1e-9)
 
-            # cull via pixel bbox
+            # cull via pixel bbox (include half thickness padding)
             p0 = ax.transData.transform((x0w, y0w))
             p1 = ax.transData.transform((x1w, y1w))
-            xmin = int(min(p0[0], p1[0]) - lw_px/2)
-            xmax = int(max(p0[0], p1[0]) + lw_px/2)
-            ymin = int(min(p0[1], p1[1]) - lw_px/2)
-            ymax = int(max(p0[1], p1[1]) + lw_px/2)
+            pad = lw_px * 0.5
+            xmin = int(min(p0[0], p1[0]) - pad)
+            xmax = int(max(p0[0], p1[0]) + pad)
+            ymin = int(min(p0[1], p1[1]) - pad)
+            ymax = int(max(p0[1], p1[1]) + pad)
             if _bbox_outside((xmin, ymin, xmax, ymax), img_bbox, pad_px):
                 continue
 
-            # update pooled artist
+            # update pooled artist (straight core; round caps come from capstyle)
             art = segment_pool[s_vis]
             art.set_xdata([x0w, x1w])
             art.set_ydata([y0w, y1w])
-            art.set_linewidth(lw_px)  # pixel linewidth
+            art.set_linewidth(lw_data)  # data units; LineWidthData converts to points
             art.set_visible(True)
             s_vis += 1
-
             if s_vis >= len(segment_pool):
                 break
 
@@ -229,9 +345,6 @@ def simulation_to_gif(
 
         # fast redraw
         canvas.restore_region(background)
-        # draw static barrier artists (already in background if truly static; harmless to skip)
-        # for art in barrier_artists:
-        #     ax.draw_artist(art)
         if show_time_title and title_obj is not None:
             ax.draw_artist(title_obj)
         for art in circle_pool:
@@ -262,3 +375,5 @@ def simulation_to_gif(
     )
     print(f"GIF saved to {out_path}")
     return out_path
+
+
