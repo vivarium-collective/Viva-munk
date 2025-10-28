@@ -117,6 +117,7 @@ def run_pymunk_experiment():
     simulation_to_gif(results,
                       filename='circlesandsegments',
                       config=config,
+                      color_by_phylogeny=True,
                       # skip_frames=10
                       )
 
