@@ -23,18 +23,18 @@ PYMUNK_CORE = core_import(core)
 def run_pymunk_experiment():
     core = PYMUNK_CORE
     initial_state = make_initial_state(
-        n_microbes=1,
+        n_microbes=2,
         n_particles=100,
         env_size=600,
         elasticity=0.0,
-        particle_radius_range=(1, 10),
+        particle_radius_range=(1, 8),
         microbe_length_range=(50, 100),
-        microbe_radius_range=(10, 20)
+        microbe_radius_range=(10, 15)
     )
 
     # run simulation
     interval = 0.1
-    steps = 600
+    steps = 2000
     config = {
         'env_size': 600,
         'gravity': 0, #-9.81,
@@ -69,7 +69,8 @@ def run_pymunk_experiment():
         config={
             'agents_key': 'cells',
             'rate': 0.02,
-            'threshold': 80.0
+            'threshold': 80.0,
+            'mutate': True,
         }
     )
 
