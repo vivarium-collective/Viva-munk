@@ -10,39 +10,39 @@ import pymunk
 from process_bigraph import Process
 
 
-def daughter_locations(parent_state):
+def daughter_locations(parent_state, *, gap=1.0, daughter_length=None, daughter_radius=None):
     """
-    Compute daughter cell locations based on the parent's position, angle, and geometry.
-    For segments: daughters are offset along the long axis.
-    For circles: daughters are offset along the parent's angle direction.
+    Compute daughter center locations so they do not overlap, accounting for geometry.
     """
-    p_loc = parent_state['location']
-    p_angle = parent_state.get('angle', 0.0)
+    px, py = parent_state['location']
+    angle = float(parent_state.get('angle', 0.0))
     dtype = parent_state.get('type', 'circle')
 
-    # Position ratios: symmetric offsets around the parent center
-    pos_ratios = [-0.25, 0.25]
-    daughter_locs = []
-
     if dtype == 'segment':
-        parent_length = float(parent_state.get('length', 1.0))
-        for ratio in pos_ratios:
-            dx = parent_length * ratio * math.cos(p_angle)
-            dy = parent_length * ratio * math.sin(p_angle)
-            loc = [p_loc[0] + dx, p_loc[1] + dy]
-            daughter_locs.append(loc)
+        Lp = float(parent_state.get('length', 1.0))
+        r  = float(parent_state.get('radius', 0.5))
+        Ld = float(daughter_length) if daughter_length is not None else max(0.0, 0.5 * Lp)
+        rd = float(daughter_radius) if daughter_radius is not None else r
+
+        # Required center spacing to avoid overlap of two capsules
+        d_center = Ld + 2.0 * rd + max(0.0, gap)
+        hx = 0.5 * d_center * math.cos(angle)
+        hy = 0.5 * d_center * math.sin(angle)
+
+        return [[px - hx, py - hy],
+                [px + hx, py + hy]]
 
     else:  # circle or fallback
-        r = float(parent_state.get('radius', 1.0))
-        # separate daughters by roughly one diameter (0.8–1.0 is typical)
-        d = max(2 * r * 0.8, 1.0)
-        for ratio in (-0.5, 0.5):
-            dx = d * ratio * math.cos(p_angle)
-            dy = d * ratio * math.sin(p_angle)
-            loc = [p_loc[0] + dx, p_loc[1] + dy]
-            daughter_locs.append(loc)
+        r  = float(parent_state.get('radius', 0.5))
+        rd = float(daughter_radius) if daughter_radius is not None else r
 
-    return daughter_locs
+        # Required center spacing to avoid overlap of two circles
+        d_center = 2.0 * rd + max(0.0, gap)
+        hx = 0.5 * d_center * math.cos(angle)
+        hy = 0.5 * d_center * math.sin(angle)
+
+        return [[px - hx, py - hy],
+                [px + hx, py + hy]]
 
 def local_impulse_point_for_shape(shape):
     """Return a random local point on the shape boundary in the body's local coords."""
