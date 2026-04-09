@@ -42,12 +42,12 @@ def run_pymunk_experiment():
             'config': config,
             'interval': interval,
             'inputs': {
-                'agents': ['cells'],
-                'particles': ['particles'],
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
             },
             'outputs': {
-                'agents': ['cells'],
-                'particles': ['particles'],
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
             }
         }
     }

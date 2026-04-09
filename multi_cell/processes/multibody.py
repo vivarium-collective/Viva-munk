@@ -76,6 +76,10 @@ class PymunkProcess(Process):
         'friction': {'_type': 'float', '_default': 0.8},
         'elasticity': {'_type': 'float', '_default': 0.0},
         'jitter_per_second': {'_type': 'float', '_default': 1e-4},  # (impulse std)
+        # Bending cell options
+        'n_bending_segments': {'_type': 'integer', '_default': 4},   # sub-segments per bending cell
+        'bending_stiffness':  {'_type': 'float',   '_default': 100.0},  # rotary spring stiffness
+        'bending_damping':    {'_type': 'float',   '_default': 5.0},   # rotary spring damping
         'barriers': 'list[map]',
         'wall_thickness': {'_type': 'float', '_default': 5},
     }
@@ -139,53 +143,57 @@ class PymunkProcess(Process):
 
     def inputs(self):
         return {
-            'agents': 'map[pymunk_agent]',     # make this map[enum[agent types]
-            'particles': 'map[pymunk_agent]',  # these are simple particles, e.g. circles
+            'segment_cells':    'map[pymunk_agent]',  # rigid capsule cells (rod-shaped)
+            'bending_cells':    'map[pymunk_agent]',  # multi-segment soft capsules with springs
+            'circle_particles': 'map[pymunk_agent]',  # circular particles (e.g. EPS)
         }
 
     def outputs(self):
         return {
-            'agents': 'map[pymunk_agent]',
-            'particles': 'map[pymunk_agent]', # these are simple particles, e.g. circles
+            'segment_cells':    'map[pymunk_agent]',
+            'bending_cells':    'map[pymunk_agent]',
+            'circle_particles': 'map[pymunk_agent]',
         }
 
     def update(self, inputs, interval):
         """
-        Efficiently sync agents + particles without allocating a combined dict,
-        step the physics, then split outputs in one pass.
+        Sync each port's bodies, step the physics, return per-port deltas.
         """
-        agents_in = inputs.get('agents', {}) or {}
-        particles_in = inputs.get('particles', {}) or {}
+        segment_in = inputs.get('segment_cells', {}) or {}
+        bending_in = inputs.get('bending_cells', {}) or {}
+        circle_in  = inputs.get('circle_particles', {}) or {}
 
-        # sanity: IDs must be unique across ports this tick
-        overlap = set(agents_in) & set(particles_in)
-        if overlap:
-            raise ValueError(
-                f"PymunkProcess.update(): ID(s) present in both agents and particles: {sorted(overlap)}"
-            )
+        # Sanity: IDs must be unique across ports this tick
+        all_id_sets = [('segment_cells', set(segment_in)),
+                       ('bending_cells', set(bending_in)),
+                       ('circle_particles', set(circle_in))]
+        for i, (n1, s1) in enumerate(all_id_sets):
+            for n2, s2 in all_id_sets[i+1:]:
+                overlap = s1 & s2
+                if overlap:
+                    raise ValueError(
+                        f"PymunkProcess.update(): ID(s) present in both {n1} and {n2}: {sorted(overlap)}"
+                    )
 
-        agent_ids = set(agents_in)
-        particle_ids = set(particles_in)
+        segment_ids = set(segment_in)
+        bending_ids = set(bending_in)
+        circle_ids  = set(circle_in)
 
-        # ------- sync bodies (no combined dict) -------
-        # local helper keeps all changes inside update()
-        def _sync_bodies_dual(agents_dict, particles_dict):
-            existing_ids = set(self.agents)
-            new_ids = set(agents_dict) | set(particles_dict)
+        # ------- sync bodies -------
+        existing_ids = set(self.agents)
+        new_ids = segment_ids | bending_ids | circle_ids
 
-            # remove stale
-            for dead_id in existing_ids - new_ids:
-                body = self.agents[dead_id]['body']
-                shape = self.agents[dead_id]['shape']
-                self.space.remove(body, shape)
-                del self.agents[dead_id]
+        # Remove stale agents (handle compound bodies for bending)
+        for dead_id in existing_ids - new_ids:
+            self._remove_object(dead_id)
 
-            # add/update both maps (order doesn't matter)
-            for d in (agents_dict, particles_dict):
-                for _id, attrs in d.items():
-                    self.manage_object(_id, attrs)
-
-        _sync_bodies_dual(agents_in, particles_in)
+        # Add/update each port's entries with the appropriate kind
+        for _id, attrs in segment_in.items():
+            self.manage_object(_id, attrs, kind='rigid')
+        for _id, attrs in bending_in.items():
+            self.manage_object(_id, attrs, kind='bending')
+        for _id, attrs in circle_in.items():
+            self.manage_object(_id, attrs, kind='rigid')
 
         # ------- integrate -------
         n_steps = max(1, int(self.config.get('substeps', 100)))
@@ -204,10 +212,14 @@ class PymunkProcess(Process):
                     self.apply_jitter_force(body, dt, sigma)
             self.space.step(dt)
 
-        # ------- emit deltas (new - old) for all Float fields -------
-        all_inputs = {**agents_in, **particles_in}
-        agents_out = {}
-        particles_out = {}
+        # ------- emit deltas per port -------
+        all_inputs = {}
+        all_inputs.update(segment_in)
+        all_inputs.update(bending_in)
+        all_inputs.update(circle_in)
+        segment_out = {}
+        bending_out = {}
+        circle_out  = {}
 
         for _id, obj in self.agents.items():
             if _id not in all_inputs:
@@ -218,10 +230,8 @@ class PymunkProcess(Process):
             old_angle = float(old.get('angle', 0.0) or 0.0)
             old_inertia = float(old.get('inertia', 0.0) or 0.0)
 
-            new_loc = (obj['body'].position.x, obj['body'].position.y)
-            new_vel = (obj['body'].velocity.x, obj['body'].velocity.y)
-            new_angle = obj['body'].angle if obj['type'] == 'segment' else 0.0
-            new_inertia = obj['body'].moment
+            # Get aggregate position/velocity (uses _aggregate for compound bodies)
+            new_loc, new_vel, new_angle, new_inertia = self._aggregate(obj)
 
             rec = {
                 'type': obj['type'],  # Enum has set semantics — must always be returned
@@ -231,12 +241,78 @@ class PymunkProcess(Process):
                 'inertia': new_inertia - old_inertia,
             }
 
-            if _id in agent_ids:
-                agents_out[_id] = rec
-            elif _id in particle_ids:
-                particles_out[_id] = rec
+            if _id in segment_ids:
+                segment_out[_id] = rec
+            elif _id in bending_ids:
+                # Include the actual bent spine for visualization
+                rec['polyline'] = self._bending_polyline(obj)
+                bending_out[_id] = rec
+            elif _id in circle_ids:
+                circle_out[_id] = rec
 
-        return {'agents': agents_out, 'particles': particles_out}
+        return {
+            'segment_cells':    segment_out,
+            'bending_cells':    bending_out,
+            'circle_particles': circle_out,
+        }
+
+    def _bending_polyline(self, obj):
+        """Return the bent spine of a bending cell as a list of (x, y) world points.
+
+        For N sub-segments, returns N+1 points: start of segment 0, then the
+        shared endpoint between each consecutive pair, then end of segment N-1.
+        """
+        bodies = obj['bodies']
+        n = len(bodies)
+        if n == 0:
+            return []
+        # Each sub-segment is from (-half_len, 0) to (+half_len, 0) in body-local coords
+        half_len = obj['length'] / (2 * n)
+        points = []
+        # Start of first segment in world coords
+        first = bodies[0]
+        points.append(first.local_to_world((-half_len, 0)))
+        # End of each segment
+        for body in bodies:
+            p = body.local_to_world((half_len, 0))
+            points.append((p.x, p.y))
+        # Convert any Vec2d to plain tuples for serialization
+        return [(p[0], p[1]) if not hasattr(p, 'x') else (p.x, p.y) for p in points]
+
+    def _aggregate(self, obj):
+        """Return (location, velocity, angle, inertia) for either rigid or compound body."""
+        if obj.get('kind') == 'bending':
+            bodies = obj['bodies']
+            n = len(bodies)
+            cx = sum(b.position.x for b in bodies) / n
+            cy = sum(b.position.y for b in bodies) / n
+            vx = sum(b.velocity.x for b in bodies) / n
+            vy = sum(b.velocity.y for b in bodies) / n
+            # Average angle is fine since rest_angles are 0 — use end-to-end direction
+            first, last = bodies[0], bodies[-1]
+            ang = math.atan2(last.position.y - first.position.y,
+                             last.position.x - first.position.x)
+            inertia = sum(b.moment for b in bodies)
+            return (cx, cy), (vx, vy), ang, inertia
+        else:
+            body = obj['body']
+            ang = body.angle if obj['type'] == 'segment' else 0.0
+            return ((body.position.x, body.position.y),
+                    (body.velocity.x, body.velocity.y),
+                    ang, body.moment)
+
+    def _remove_object(self, agent_id):
+        obj = self.agents[agent_id]
+        if obj.get('kind') == 'bending':
+            for joint in obj.get('joints', []):
+                self.space.remove(joint)
+            for shape in obj['shapes']:
+                self.space.remove(shape)
+            for body in obj['bodies']:
+                self.space.remove(body)
+        else:
+            self.space.remove(obj['body'], obj['shape'])
+        del self.agents[agent_id]
 
     def apply_jitter_force(self, body, dt, sigma):
         # Apply jitter at body center (skip per-shape lookup for speed)
@@ -259,10 +335,20 @@ class PymunkProcess(Process):
         for agent_id, attrs in agents.items():
             self.manage_object(agent_id, attrs)
 
-    def manage_object(self, agent_id, attrs):
+    def manage_object(self, agent_id, attrs, kind='rigid'):
         agent = self.agents.get(agent_id)
         if not agent:
-            self.create_new_object(agent_id, attrs)
+            self.create_new_object(agent_id, attrs, kind=kind)
+            return
+
+        # If kind changed (shouldn't normally), rebuild from scratch
+        if agent.get('kind', 'rigid') != kind:
+            self._remove_object(agent_id)
+            self.create_new_object(agent_id, attrs, kind=kind)
+            return
+
+        if kind == 'bending':
+            self._update_bending(agent_id, agent, attrs)
             return
 
         body = agent['body']
@@ -333,7 +419,11 @@ class PymunkProcess(Process):
             agent['angle'] = body.angle
             agent['length'] = body.length
 
-    def create_new_object(self, agent_id, attrs):
+    def create_new_object(self, agent_id, attrs, kind='rigid'):
+        if kind == 'bending':
+            self._create_bending(agent_id, attrs)
+            return
+
         shape_type = attrs.get('type') or 'circle'
         mass = float(attrs.get('mass', 1.0))
         vx, vy = attrs.get('velocity', (0.0, 0.0))
@@ -370,6 +460,7 @@ class PymunkProcess(Process):
 
         self.space.add(body, shape)
         self.agents[agent_id] = {
+            'kind': 'rigid',
             'body': body,
             'shape': shape,
             'type': shape_type,
@@ -378,6 +469,110 @@ class PymunkProcess(Process):
             'angle': angle,
             'length': length,
         }
+
+    # ------------------------------------------------------------------
+    # Bending cell support — multi-segment compound bodies
+    # ------------------------------------------------------------------
+
+    def _create_bending(self, agent_id, attrs):
+        """Build a bending cell as N rigid sub-segments linked by pivots + rotary springs."""
+        n = int(self.config.get('n_bending_segments', 4))
+        stiffness = float(self.config.get('bending_stiffness', 100.0))
+        damping = float(self.config.get('bending_damping', 5.0))
+
+        total_mass = float(attrs.get('mass', 1.0))
+        total_length = float(attrs['length'])
+        radius = float(attrs['radius'])
+        angle = float(attrs.get('angle', 0.0))
+        cx, cy = attrs.get('location', (0.0, 0.0))
+        vx, vy = attrs.get('velocity', (0.0, 0.0))
+
+        sub_len = total_length / n
+        sub_mass = total_mass / n
+        sub_inertia = pymunk.moment_for_segment(
+            sub_mass, (-sub_len / 2, 0), (sub_len / 2, 0), radius)
+        elasticity = attrs.get('elasticity', self.config['elasticity'])
+        friction = attrs.get('friction', self.config['friction'])
+
+        bodies, shapes, joints = [], [], []
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        # Center positions of each sub-segment, spaced along the cell axis
+        for i in range(n):
+            t = (i - (n - 1) / 2.0) * sub_len  # offset from cell center
+            bx = cx + cos_a * t
+            by = cy + sin_a * t
+            body = pymunk.Body(sub_mass, sub_inertia)
+            body.position = (bx, by)
+            body.velocity = (vx, vy)
+            body.angle = angle
+            shape = pymunk.Segment(body, (-sub_len / 2, 0), (sub_len / 2, 0), radius)
+            shape.elasticity = elasticity
+            shape.friction = friction
+            self.space.add(body, shape)
+            bodies.append(body)
+            shapes.append(shape)
+
+        # Disable collisions BETWEEN sub-segments of the same cell using a unique group
+        group_id = id(bodies[0]) & 0x7FFFFFFF or 1
+        sf = pymunk.ShapeFilter(group=group_id)
+        for s in shapes:
+            s.filter = sf
+
+        # Pin adjacent sub-bodies at their shared endpoint and add a rotary spring
+        for i in range(n - 1):
+            a, b = bodies[i], bodies[i + 1]
+            # Anchor at the right end of `a` (= left end of `b`) in each body's local frame
+            pivot = pymunk.PivotJoint(a, b, (sub_len / 2, 0), (-sub_len / 2, 0))
+            spring = pymunk.DampedRotarySpring(
+                a, b, rest_angle=0.0, stiffness=stiffness, damping=damping)
+            self.space.add(pivot, spring)
+            joints.append(pivot)
+            joints.append(spring)
+
+        self.agents[agent_id] = {
+            'kind': 'bending',
+            'type': 'segment',
+            'bodies': bodies,
+            'shapes': shapes,
+            'joints': joints,
+            'mass': total_mass,
+            'radius': radius,
+            'length': total_length,
+            'angle': angle,
+            'n_segments': n,
+        }
+
+    def _update_bending(self, agent_id, agent, attrs):
+        """Update an existing bending cell. If geometry changed, rebuild from scratch."""
+        new_length = float(attrs.get('length', agent['length']) or agent['length'])
+        new_radius = float(attrs.get('radius', agent['radius']) or agent['radius'])
+        new_mass = float(attrs.get('mass', agent['mass']) or agent['mass'])
+
+        # Rebuild if length or radius changed (growth)
+        if (abs(new_length - agent['length']) > 1e-6
+                or abs(new_radius - agent['radius']) > 1e-6):
+            # Preserve current centroid + velocity + angle from physics
+            loc, vel, ang, _ = self._aggregate(agent)
+            self._remove_object(agent_id)
+            new_attrs = {
+                'mass': new_mass,
+                'length': new_length,
+                'radius': new_radius,
+                'angle': ang,
+                'location': loc,
+                'velocity': vel,
+                'elasticity': attrs.get('elasticity', self.config['elasticity']),
+                'friction': attrs.get('friction', self.config['friction']),
+            }
+            self._create_bending(agent_id, new_attrs)
+            return
+
+        # Mass-only change: redistribute across sub-bodies
+        if abs(new_mass - agent['mass']) > 1e-9:
+            sub_mass = new_mass / agent['n_segments']
+            for body in agent['bodies']:
+                body.mass = sub_mass
+            agent['mass'] = new_mass
 
     def get_state_update(self):
         state = {}

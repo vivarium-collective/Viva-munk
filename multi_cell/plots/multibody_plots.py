@@ -224,19 +224,35 @@ class GifRenderer:
         # segments — draw full capsule shape matching pymunk geometry
         for aid, o in layer.items():
             if o.get('type') != 'segment': continue
-            L = float(o['length'])
             r = float(o['radius'])
+            if r <= 0: continue
+            color = color_fn(aid)
+            lw_data = 2.0 * r  # capsule diameter in data units
+
+            # If a polyline is present (bending cells), draw each sub-segment
+            polyline = o.get('polyline')
+            if polyline and len(polyline) >= 2:
+                for i in range(len(polyline) - 1):
+                    x0, y0 = polyline[i]
+                    x1, y1 = polyline[i + 1]
+                    if not _finite(x0, y0, x1, y1):
+                        continue
+                    art = self._need_segment(s_vis)
+                    art.set_xdata([x0, x1]); art.set_ydata([y0, y1])
+                    art._lw_data = lw_data; art.set_color(color)
+                    if not art.get_visible(): art.set_visible(True)
+                    s_vis += 1
+                continue
+
+            # Single rigid capsule fallback
+            L = float(o['length'])
             ang = _norm_angle(float(o['angle']))
             cx, cy = o['location']
-            if not _finite(cx, cy, L, r, ang) or L <= 0 or r <= 0: continue
+            if not _finite(cx, cy, L, r, ang) or L <= 0: continue
 
-            # Full segment endpoints (pymunk capsule extends from -L/2 to +L/2 in local coords)
             half = 0.5 * L
             dx = math.cos(ang) * half; dy = math.sin(ang) * half
             x0, y0 = cx - dx, cy - dy; x1, y1 = cx + dx, cy + dy
-
-            # Linewidth = 2*radius in data units (the capsule diameter)
-            lw_data = 2.0 * r
 
             # Viewport culling
             lw_px = max(1, int(round(lw_data * self.ypu)))
@@ -249,7 +265,7 @@ class GifRenderer:
 
             art = self._need_segment(s_vis)
             art.set_xdata([x0, x1]); art.set_ydata([y0, y1])
-            art._lw_data = lw_data; art.set_color(color_fn(aid))
+            art._lw_data = lw_data; art.set_color(color)
             if not art.get_visible(): art.set_visible(True)
             s_vis += 1
 

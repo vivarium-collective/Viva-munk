@@ -7,7 +7,10 @@ Usage:
 import argparse
 import json
 import os
+import socket
+import subprocess
 import time
+from datetime import datetime, timezone
 
 from bigraph_viz import plot_bigraph
 from process_bigraph import Composite, gather_emitter_results
@@ -79,12 +82,12 @@ def daughter_machine_document(config=None):
             },
             'interval': interval,
             'inputs': {
-                'agents': ['cells'],
-                'particles': ['particles'],
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
             },
             'outputs': {
-                'agents': ['cells'],
-                'particles': ['particles'],
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
             },
         },
         'remove_crossing': make_remove_crossing_process(
@@ -97,6 +100,90 @@ def daughter_machine_document(config=None):
             'time': ['global_time'],
         }),
     }
+    return document
+
+
+def bending_cells_document(config=None):
+    """Bending cells: each cell is a multi-segment compound body that can flex.
+
+    Same setup as daughter_machine but cells are wired to the bending_cells port,
+    so PymunkProcess constructs each cell as N rigid sub-segments linked by
+    pivot joints and damped rotary springs. The cells visibly bend under
+    pressure as the colony fills the chamber.
+    """
+    config = config or {}
+    env_size = config.get('env_size', 30)
+    interval = config.get('interval', 30.0)
+    growth_rate = config.get('growth_rate', 0.000289)
+    cell_radius = config.get('cell_radius', 0.5)
+    cell_length = config.get('cell_length', 2.0)
+    density = config.get('density', 0.02)
+    flow_x = config.get('flow_x', env_size * 0.85)
+    n_segments = config.get('n_bending_segments', 4)
+    stiffness = config.get('bending_stiffness', 30.0)
+    damping = config.get('bending_damping', 5.0)
+    jitter = config.get('jitter_per_second', 1e-4)
+    use_flow_channel = config.get('use_flow_channel', True)
+    division_threshold = config.get('division_threshold', None)
+    if division_threshold is None:
+        division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
+
+    initial_state = make_initial_state(
+        n_microbes=1,
+        n_particles=0,
+        env_size=env_size,
+        microbe_length_range=(cell_length, cell_length),
+        microbe_radius_range=(cell_radius, cell_radius),
+        microbe_mass_density=density,
+    )
+
+    add_grow_divide_to_agents(
+        initial_state,
+        agents_key='cells',
+        config={
+            'agents_key': 'cells',
+            'rate': growth_rate,
+            'threshold': division_threshold,
+            'mutate': True,
+        },
+    )
+
+    document = {
+        'cells': initial_state['cells'],
+        'particles': initial_state['particles'],
+        'multibody': {
+            '_type': 'process',
+            'address': 'local:PymunkProcess',
+            'config': {
+                'env_size': env_size,
+                'gravity': 0,
+                'elasticity': 0.1,
+                'jitter_per_second': jitter,
+                'n_bending_segments': n_segments,
+                'bending_stiffness': stiffness,
+                'bending_damping': damping,
+            },
+            'interval': interval,
+            'inputs': {
+                'bending_cells': ['cells'],
+                'circle_particles': ['particles'],
+            },
+            'outputs': {
+                'bending_cells': ['cells'],
+                'circle_particles': ['particles'],
+            },
+        },
+        'emitter': emitter_from_wires({
+            'agents': ['cells'],
+            'particles': ['particles'],
+            'time': ['global_time'],
+        }),
+    }
+    if use_flow_channel:
+        document['remove_crossing'] = make_remove_crossing_process(
+            x_max=flow_x,
+            agents_key='cells',
+        )
     return document
 
 
@@ -201,12 +288,12 @@ def mother_machine_document(config=None):
             },
             'interval': interval,
             'inputs': {
-                'agents': ['cells'],
-                'particles': ['particles'],
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
             },
             'outputs': {
-                'agents': ['cells'],
-                'particles': ['particles'],
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
             },
         },
         'remove_crossing': make_remove_crossing_process(
@@ -285,12 +372,12 @@ def biofilm_document(config=None):
             },
             'interval': interval,
             'inputs': {
-                'agents': ['cells'],
-                'particles': ['particles'],
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
             },
             'outputs': {
-                'agents': ['cells'],
-                'particles': ['particles'],
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
             },
         },
         'emitter': emitter_from_wires({
@@ -335,6 +422,18 @@ EXPERIMENT_REGISTRY = {
             'secretion_rate': 0.01,
         },
         'description': 'Multiple E. coli-scale cells grow and divide in an environment seeded with particles of varying sizes. Cells also secrete small EPS particles that accumulate around the colony.',
+    },
+    'bending_cells': {
+        'document': bending_cells_document,
+        'time': 18000.0,  # 5 hours
+        'config': {
+            'env_size': 30,
+            'n_bending_segments': 4,
+            'bending_stiffness': 15.0,
+            'jitter_per_second': 0.0,  # disable Brownian jitter
+            'use_flow_channel': False,  # no removal — colony grows freely
+        },
+        'description': 'Cells modeled as multi-segment compound bodies that can bend under pressure. Each cell is built from 4 rigid sub-segments linked by pivot joints and damped rotary springs, so the colony deforms more naturally as cells push against each other.',
     },
 }
 
@@ -473,9 +572,40 @@ def run_experiment(name, output_dir='out'):
     }
 
 
+def _gather_metadata():
+    """Collect provenance info: timestamp, host, git commit."""
+    meta = {
+        'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'),
+    }
+    # Where it was generated
+    if os.environ.get('GITHUB_ACTIONS'):
+        runner = os.environ.get('RUNNER_NAME', 'GitHub Actions')
+        repo = os.environ.get('GITHUB_REPOSITORY', '')
+        meta['generated_on'] = f'GitHub Actions ({runner})' + (f' — {repo}' if repo else '')
+    else:
+        meta['generated_on'] = socket.gethostname()
+    # Commit hash
+    sha = os.environ.get('GITHUB_SHA')
+    if not sha:
+        try:
+            sha = subprocess.check_output(
+                ['git', 'rev-parse', 'HEAD'],
+                stderr=subprocess.DEVNULL,
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+            ).decode().strip()
+        except Exception:
+            sha = None
+    meta['commit'] = sha
+    repo_url = os.environ.get('GITHUB_SERVER_URL', 'https://github.com')
+    repo_name = os.environ.get('GITHUB_REPOSITORY', 'vivarium-collective/Viva-munk')
+    meta['commit_url'] = f'{repo_url}/{repo_name}/commit/{sha}' if sha else None
+    return meta
+
+
 def generate_html_report(experiment_results, output_dir='out'):
     """Generate an HTML report with GIFs, bigraph viz, and interactive JSON viewer."""
     html_path = os.path.join(output_dir, 'report.html')
+    meta = _gather_metadata()
 
     sections = []
     for r in experiment_results:
@@ -560,10 +690,19 @@ def generate_html_report(experiment_results, output_dir='out'):
   .json-path {{ font-family: ui-monospace, monospace; font-size: 12px; margin-bottom: 8px; color: #333; }}
   .json-value pre {{ background: #f8f8f8; border: 1px solid #eee; border-radius: 8px; padding: 10px; overflow: auto; font-size: 12px; }}
   .json-pill {{ display: inline-block; padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; margin-right: 6px; background: #fafafa; }}
+  .meta {{ background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 0.8rem 1.2rem; margin: 1rem 0; font-size: 13px; color: #555; }}
+  .meta div {{ display: inline-block; margin-right: 1.5rem; }}
+  .meta code {{ background: #f0f0f0; padding: 1px 6px; border-radius: 4px; }}
+  .meta a {{ color: #0366d6; text-decoration: none; }}
 </style>
 </head>
 <body>
 <h1>multi-cell experiments</h1>
+<div class="meta">
+  <div><strong>Generated:</strong> {meta['generated_at']}</div>
+  <div><strong>On:</strong> {meta['generated_on']}</div>
+  {f'<div><strong>Commit:</strong> <a href="{meta["commit_url"]}"><code>{meta["commit"][:8]}</code></a></div>' if meta.get('commit') else ''}
+</div>
 {''.join(sections)}
 {_json_viewer_js()}
 </body>
@@ -665,6 +804,7 @@ def main():
     )
     parser.add_argument('--output', default='out', help='Output directory')
     parser.add_argument('--open', action='store_true', default=True, help='Open report in browser')
+    parser.add_argument('--no-open', dest='open', action='store_false', help='Do not open report in browser (for CI)')
     args = parser.parse_args()
 
     all_results = []

@@ -84,6 +84,10 @@ def register_pymunk_agent_dispatches():
         if 'type' in update and update['type'] is not None:
             result['type'] = update['type']
 
+        # Polyline (list of 2-tuples): set semantics — used by bending cells
+        if 'polyline' in update and update['polyline'] is not None:
+            result['polyline'] = update['polyline']
+
         return result, []
 
     @reconcile.dispatch
@@ -125,6 +129,12 @@ def register_pymunk_agent_dispatches():
             v = u.get('type') if isinstance(u, dict) else None
             if v is not None:
                 result['type'] = v
+
+        # Polyline: last non-None wins
+        for u in non_none:
+            v = u.get('polyline') if isinstance(u, dict) else None
+            if v is not None:
+                result['polyline'] = v
 
         return result if result else None
 
