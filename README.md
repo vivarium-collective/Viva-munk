@@ -10,7 +10,7 @@ Default parameters are calibrated to *E. coli* proportions (~1 um wide, ~2 um at
 
 ## Experiments Report
 
-**[View the experiments report](https://vivarium-collective.github.io/pymunk-process/)** ([source](doc/index.html))
+**[View the experiments report](https://vivarium-collective.github.io/Viva-munk/)** ([source](doc/index.html))
 
 | Experiment | Description |
 |------------|-------------|
@@ -21,8 +21,8 @@ Default parameters are calibrated to *E. coli* proportions (~1 um wide, ~2 um at
 ## Quick Start
 
 ```bash
-git clone https://github.com/vivarium-collective/pymunk-process.git
-cd pymunk-process
+git clone https://github.com/vivarium-collective/Viva-munk.git
+cd Viva-munk
 pip install -e .
 
 # Run all experiments and open the HTML report
