@@ -104,7 +104,7 @@ class GifRenderer:
     def __init__(
         self, env_size, barriers, figure_size_inches, dpi, show_time_title,
         world_pad, max_line_px, xlim=None, ylim=None, flow_regions=None,
-        draw_walls=True, adhesion_surface=None,
+        draw_walls=True, adhesion_surface=None, pressure_colorbar=None,
     ):
         self.env_size = float(env_size)
         self.show_time_title = show_time_title
@@ -124,9 +124,18 @@ class GifRenderer:
             fig_w = base
             fig_h = base * (data_h / data_w)
 
-        self.fig = plt.figure(figsize=(fig_w, fig_h), dpi=dpi)
+        # When a colorbar is shown, widen the figure so the colorbar lives
+        # in its own column on the right, outside the data axes.
+        cbar_extra = 0.18 * fig_w if pressure_colorbar else 0.0
+
+        self.fig = plt.figure(figsize=(fig_w + cbar_extra, fig_h), dpi=dpi)
         self.canvas = FigureCanvas(self.fig)
-        self.ax = self.fig.add_subplot(111)
+        if pressure_colorbar:
+            # Reserve a column on the right for the colorbar
+            ax_frac = fig_w / (fig_w + cbar_extra)
+            self.ax = self.fig.add_axes([0.0, 0.0, ax_frac * 0.95, 1.0])
+        else:
+            self.ax = self.fig.add_subplot(111)
         self.ax.set_aspect('equal', adjustable='box')
         self.ax.set_xlim(x0, x1)
         self.ax.set_ylim(y0, y1)
@@ -149,6 +158,8 @@ class GifRenderer:
         if adhesion_surface:
             self._draw_adhesion_surface(adhesion_surface)
         self._draw_barriers(barriers)
+        if pressure_colorbar:
+            self._draw_pressure_colorbar(pressure_colorbar)
 
         # pools (grow-on-demand)
         self.circle_pool = []
@@ -204,6 +215,26 @@ class GifRenderer:
             return
         self.ax.add_line(line)
 
+    def _draw_pressure_colorbar(self, info):
+        """Add a gray→red colorbar in its own column to the right of the data axes."""
+        from matplotlib.colors import LinearSegmentedColormap
+        from matplotlib.cm import ScalarMappable
+        from matplotlib.colors import Normalize
+        pmax = float(info.get('pmax', 8.0))
+        cmap = LinearSegmentedColormap.from_list(
+            'pressure', [(0.7, 0.7, 0.7), (0.85, 0.1, 0.1)])
+        norm = Normalize(vmin=0.0, vmax=pmax)
+        sm = ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        # Place the colorbar in the reserved right column
+        ax_pos = self.ax.get_position()
+        cax_left = ax_pos.x1 + 0.02
+        cax_width = max(0.02, 1.0 - cax_left - 0.05)
+        cax = self.fig.add_axes([cax_left, ax_pos.y0 + 0.10, cax_width * 0.4, ax_pos.height * 0.7])
+        cbar = self.fig.colorbar(sm, cax=cax)
+        cbar.set_label('pressure', fontsize=9)
+        cbar.ax.tick_params(labelsize=8)
+
     def _draw_barriers(self, barriers, color='gray'):
         dpi_fig = self.fig.dpi
         for b in barriers or []:
@@ -234,6 +265,13 @@ class GifRenderer:
         c_vis = s_vis = 0
         layer = step.get(agents_key) or {}
 
+        # Defensive: hide ALL pool slots before drawing to guarantee no stale
+        # state from a previous frame can leak through.
+        for art in self.circle_pool:
+            if art.get_visible(): art.set_visible(False)
+        for art in self.segment_pool:
+            if art.get_visible(): art.set_visible(False)
+
         # circles
         for aid, o in layer.items():
             if o.get('type') != 'circle': continue
@@ -244,65 +282,44 @@ class GifRenderer:
             if _bbox_outside((int(px0), int(py0), int(px1), int(py1)), self.img_bbox, self.pad_px): continue
             art = self._need_circle(c_vis)
             art.center = (cx, cy); art.set_radius(r)
-            rgb = color_fn(aid); art.set_facecolor(rgb); art.set_edgecolor(rgb)
-            if not art.get_visible(): art.set_visible(True)
+            rgb = color_fn(aid, o); art.set_facecolor(rgb); art.set_edgecolor(rgb)
+            art.set_visible(True)
             c_vis += 1
-
-        # hide extra circles
-        for i in range(c_vis, len(self.circle_pool)):
-            if self.circle_pool[i].get_visible(): self.circle_pool[i].set_visible(False)
 
         # segments — draw full capsule shape matching pymunk geometry
         for aid, o in layer.items():
             if o.get('type') != 'segment': continue
             r = float(o['radius'])
             if r <= 0: continue
-            color = color_fn(aid)
+            color = color_fn(aid, o)
             lw_data = 2.0 * r  # capsule diameter in data units
 
-            # If a polyline is present (bending cells), draw each sub-segment
+            # Build a polyline for this cell. Bending cells emit one from
+            # PymunkProcess; others (and freshly-divided daughters that have
+            # not yet been seen by PymunkProcess) get a synthesized straight
+            # 2-point spine from location/length/angle so they always render
+            # through the same code path.
             polyline = o.get('polyline')
-            if polyline and len(polyline) >= 2:
-                for i in range(len(polyline) - 1):
-                    x0, y0 = polyline[i]
-                    x1, y1 = polyline[i + 1]
-                    if not _finite(x0, y0, x1, y1):
-                        continue
-                    art = self._need_segment(s_vis)
-                    art.set_xdata([x0, x1]); art.set_ydata([y0, y1])
-                    art._lw_data = lw_data; art.set_color(color)
-                    if not art.get_visible(): art.set_visible(True)
-                    s_vis += 1
-                continue
+            if not polyline or len(polyline) < 2:
+                L = float(o.get('length', 0.0) or 0.0)
+                ang = _norm_angle(float(o.get('angle', 0.0) or 0.0))
+                loc = o.get('location')
+                if loc is None or L <= 0 or not _finite(loc[0], loc[1], L, r, ang):
+                    continue
+                half = 0.5 * L
+                dx = math.cos(ang) * half; dy = math.sin(ang) * half
+                polyline = [(loc[0] - dx, loc[1] - dy), (loc[0] + dx, loc[1] + dy)]
 
-            # Single rigid capsule fallback
-            L = float(o['length'])
-            ang = _norm_angle(float(o['angle']))
-            cx, cy = o['location']
-            if not _finite(cx, cy, L, r, ang) or L <= 0: continue
-
-            half = 0.5 * L
-            dx = math.cos(ang) * half; dy = math.sin(ang) * half
-            x0, y0 = cx - dx, cy - dy; x1, y1 = cx + dx, cy + dy
-
-            # Viewport culling
-            lw_px = max(1, int(round(lw_data * self.ypu)))
-            p0 = self.ax.transData.transform((x0, y0))
-            p1 = self.ax.transData.transform((x1, y1))
-            pad = lw_px * 0.5
-            xmin, xmax = int(min(p0[0], p1[0]) - pad), int(max(p0[0], p1[0]) + pad)
-            ymin, ymax = int(min(p0[1], p1[1]) - pad), int(max(p0[1], p1[1]) + pad)
-            if _bbox_outside((xmin, ymin, xmax, ymax), self.img_bbox, self.pad_px): continue
-
-            art = self._need_segment(s_vis)
-            art.set_xdata([x0, x1]); art.set_ydata([y0, y1])
-            art._lw_data = lw_data; art.set_color(color)
-            if not art.get_visible(): art.set_visible(True)
-            s_vis += 1
-
-        # hide extra segments
-        for i in range(s_vis, len(self.segment_pool)):
-            if self.segment_pool[i].get_visible(): self.segment_pool[i].set_visible(False)
+            for i in range(len(polyline) - 1):
+                x0, y0 = polyline[i]
+                x1, y1 = polyline[i + 1]
+                if not _finite(x0, y0, x1, y1):
+                    continue
+                art = self._need_segment(s_vis)
+                art.set_xdata([x0, x1]); art.set_ydata([y0, y1])
+                art._lw_data = lw_data; art.set_color(color)
+                art.set_visible(True)
+                s_vis += 1
 
         # title
         if self.show_time_title and self.title_obj is not None:
@@ -338,6 +355,8 @@ def simulation_to_gif(
     adhesion_surface=None,  # 'bottom'/'top'/'left'/'right' to highlight adhesive wall
     # coloring:
     color_by_phylogeny=False,   # << default to uniform color
+    color_by_pressure=False,    # color cells by their `pressure` field
+    pressure_max=10.0,          # pressure value at which color reaches full red
     color_seed=None,
     base_s=0.70, base_v=0.95,
     mutate_dh=0.05, mutate_ds=0.03, mutate_dv=0.03,
@@ -369,28 +388,47 @@ def simulation_to_gif(
     barriers = config.get('barriers', [])
 
     # color policy
-    if color_by_phylogeny:
+    _pc = particle_color
+    if color_by_pressure:
+        # Gray (0.7, 0.7, 0.7) at zero pressure → red (0.85, 0.1, 0.1) at pressure_max
+        gray = (0.7, 0.7, 0.7)
+        red = (0.85, 0.1, 0.1)
+        pmax = max(1e-9, float(pressure_max))
+        def _color(aid, ent=None):
+            if _pc and aid.startswith(('eps_', 'p_')):
+                return _pc
+            p = 0.0
+            if isinstance(ent, dict):
+                p = float(ent.get('pressure', 0.0) or 0.0)
+            t = max(0.0, min(1.0, p / pmax))
+            return (
+                gray[0] + (red[0] - gray[0]) * t,
+                gray[1] + (red[1] - gray[1]) * t,
+                gray[2] + (red[2] - gray[2]) * t,
+            )
+    elif color_by_phylogeny:
         rgb_colors = build_phylogeny_colors(
             frames, agents_key=agents_key, seed=color_seed,
             base_s=base_s, base_v=base_v, dh=mutate_dh, ds=mutate_ds, dv=mutate_dv
         )
-        _pc = particle_color
-        def _color(aid):
+        def _color(aid, ent=None):
             # Particles (e.g. EPS) get a uniform color
             if _pc and aid.startswith(('eps_', 'p_')):
                 return _pc
             return rgb_colors.get(aid, default_rgb)
     else:
         # no phylogeny: use uniform if provided, otherwise fallback default
-        def _color(aid):
+        def _color(aid, ent=None):
             return uniform_color if uniform_color is not None else default_rgb
 
     # render
+    pressure_colorbar = None  # colorbar disabled
     renderer = GifRenderer(
         env_size, barriers, figure_size_inches, dpi, show_time_title,
         world_pad, max_line_px, xlim=xlim, ylim=ylim,
         flow_regions=flow_regions, draw_walls=draw_walls,
         adhesion_surface=adhesion_surface,
+        pressure_colorbar=pressure_colorbar,
     )
     try:
         pil_frames = [renderer.draw_frame(step, agents_key, _color, max_radius_px) for step in frames]

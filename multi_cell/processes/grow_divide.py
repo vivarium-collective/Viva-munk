@@ -60,6 +60,10 @@ class GrowDivide(Process):
         'rate_max':      {'_type': 'float', '_default': 10.0},
         'threshold_min': {'_type': 'float', '_default': 1e-3},
         'threshold_max': {'_type': 'float', '_default': 1e9},
+
+        # Pressure inhibition: effective_rate = rate * exp(-pressure / pressure_k)
+        # When pressure >> pressure_k, growth is strongly suppressed.
+        'pressure_k':    {'_type': 'float', '_default': 5.0},
     }
 
     # ---------------- internal helpers ----------------
@@ -135,6 +139,13 @@ class GrowDivide(Process):
 
         # per-agent (or default) kinetics
         rate, thresh = self._get_agent_gd_params(agent)
+
+        # Pressure inhibition: scale rate down as the cell is more crowded.
+        # effective_rate = base_rate * exp(-pressure / pressure_k)
+        pressure = float(agent.get('pressure', 0.0) or 0.0)
+        pressure_k = float(self.config.get('pressure_k', 5.0))
+        if pressure > 0 and pressure_k > 0:
+            rate = rate * math.exp(-pressure / pressure_k)
 
         # mass growth
         m = float(agent.get('mass', 0.0))
@@ -240,6 +251,27 @@ class GrowDivide(Process):
                 dvx = eps * math.cos(angle)
                 dvy = eps * math.sin(angle)
 
+                # Only seed a fresh polyline for bending cells (mother had one).
+                # For rigid segment cells PymunkProcess never emits polylines,
+                # so leaving a polyline on the daughter would freeze the
+                # renderer at the birth pose forever.
+                mother_has_polyline = bool(agent.get('polyline'))
+                d1_extra = {}
+                d2_extra = {}
+                if mother_has_polyline:
+                    cos_a = math.cos(angle)
+                    sin_a = math.sin(angle)
+                    hx = cos_a * (L_d / 2)
+                    hy = sin_a * (L_d / 2)
+                    d1_extra['polyline'] = [
+                        (float(loc1[0] - hx), float(loc1[1] - hy)),
+                        (float(loc1[0] + hx), float(loc1[1] + hy)),
+                    ]
+                    d2_extra['polyline'] = [
+                        (float(loc2[0] - hx), float(loc2[1] - hy)),
+                        (float(loc2[0] + hx), float(loc2[1] + hy)),
+                    ]
+
                 d1 = dict(base, **{
                     'type': 'segment',
                     'mass': half_mass,
@@ -249,6 +281,7 @@ class GrowDivide(Process):
                     'location': (float(loc1[0]), float(loc1[1])),
                     'velocity': (float(vx + dvx), float(vy + dvy)),
                     'adhesins': half_adhesins,
+                    **d1_extra,
                 })
                 d2 = dict(base, **{
                     'type': 'segment',
@@ -259,6 +292,7 @@ class GrowDivide(Process):
                     'location': (float(loc2[0]), float(loc2[1])),
                     'velocity': (float(vx - dvx), float(vy - dvy)),
                     'adhesins': half_adhesins,
+                    **d2_extra,
                 })
 
             # Per-daughter grow_divide configs (mutated)

@@ -13,6 +13,7 @@ from multi_cell.processes.multibody import PymunkProcess
 from multi_cell.processes.grow_divide import GrowDivide
 from multi_cell.processes.remove_crossing import RemoveCrossing
 from multi_cell.processes.secrete_eps import SecreteEPS
+from multi_cell.processes.pressure import Pressure
 from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
 
 # Register custom dispatches once at module import
@@ -30,6 +31,7 @@ def register_processes(core):
     core.register_link('GrowDivide', GrowDivide)
     core.register_link('RemoveCrossing', RemoveCrossing)
     core.register_link('SecreteEPS', SecreteEPS)
+    core.register_link('Pressure', Pressure)
     core.register_link('Composite', Composite)
     core.register_link('RAMEmitter', RAMEmitter)
 

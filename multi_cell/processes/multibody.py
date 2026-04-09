@@ -678,28 +678,92 @@ class PymunkProcess(Process):
         }
 
     def _update_bending(self, agent_id, agent, attrs):
-        """Update an existing bending cell. If geometry changed, rebuild from scratch."""
+        """Update an existing bending cell. Preserves the current bent shape
+        when growing — old sub-body positions are scaled outward from the
+        centroid so the cell appears to grow continuously.
+        """
         new_length = float(attrs.get('length', agent['length']) or agent['length'])
         new_radius = float(attrs.get('radius', agent['radius']) or agent['radius'])
         new_mass = float(attrs.get('mass', agent['mass']) or agent['mass'])
 
-        # Rebuild if length or radius changed (growth)
-        if (abs(new_length - agent['length']) > 1e-6
-                or abs(new_radius - agent['radius']) > 1e-6):
-            # Preserve current centroid + velocity + angle from physics
-            loc, vel, ang, _ = self._aggregate(agent)
+        old_length = agent['length']
+        old_radius = agent['radius']
+
+        if (abs(new_length - old_length) > 1e-6
+                or abs(new_radius - old_radius) > 1e-6):
+            # Snapshot current sub-body positions, velocities, angles BEFORE removing
+            old_bodies = agent['bodies']
+            n = len(old_bodies)
+            cx = sum(b.position.x for b in old_bodies) / n
+            cy = sum(b.position.y for b in old_bodies) / n
+            old_positions = [(b.position.x - cx, b.position.y - cy) for b in old_bodies]
+            old_velocities = [(b.velocity.x, b.velocity.y) for b in old_bodies]
+            old_angles = [b.angle for b in old_bodies]
+
+            # Scale offsets outward from centroid in proportion to length growth
+            scale = new_length / old_length if old_length > 0 else 1.0
+
+            # Remove the old compound and rebuild at the same scaled-out positions
             self._remove_object(agent_id)
-            new_attrs = {
+
+            n_new = int(self.config.get('n_bending_segments', 4))
+            if n_new != n:
+                n_new = n  # keep same n to reuse the saved positions
+            stiffness = float(self.config.get('bending_stiffness', 100.0))
+            damping = float(self.config.get('bending_damping', 5.0))
+            elasticity = attrs.get('elasticity', self.config['elasticity'])
+            friction = attrs.get('friction', self.config['friction'])
+
+            sub_len = new_length / n_new
+            sub_mass = new_mass / n_new
+            sub_inertia = pymunk.moment_for_segment(
+                sub_mass, (-sub_len / 2, 0), (sub_len / 2, 0), new_radius)
+
+            bodies, shapes, joints = [], [], []
+            for i in range(n_new):
+                ox, oy = old_positions[i]
+                body = pymunk.Body(sub_mass, sub_inertia)
+                body.position = (cx + ox * scale, cy + oy * scale)
+                body.velocity = old_velocities[i]
+                body.angle = old_angles[i]
+                shape = pymunk.Segment(
+                    body, (-sub_len / 2, 0), (sub_len / 2, 0), new_radius)
+                shape.elasticity = elasticity
+                shape.friction = friction
+                self.space.add(body, shape)
+                bodies.append(body)
+                shapes.append(shape)
+
+            # Disable collisions among sub-segments of this cell
+            group_id = id(bodies[0]) & 0x7FFFFFFF or 1
+            sf = pymunk.ShapeFilter(group=group_id)
+            for s in shapes:
+                s.filter = sf
+
+            # Pin adjacent sub-bodies and add rotary springs
+            for i in range(n_new - 1):
+                a, b = bodies[i], bodies[i + 1]
+                pivot = pymunk.PivotJoint(
+                    a, b, (sub_len / 2, 0), (-sub_len / 2, 0))
+                spring = pymunk.DampedRotarySpring(
+                    a, b, rest_angle=0.0, stiffness=stiffness, damping=damping)
+                self.space.add(pivot, spring)
+                joints.append(pivot)
+                joints.append(spring)
+
+            self.agents[agent_id] = {
+                'kind': 'bending',
+                'type': 'segment',
+                'bodies': bodies,
+                'shapes': shapes,
+                'joints': joints,
                 'mass': new_mass,
-                'length': new_length,
                 'radius': new_radius,
-                'angle': ang,
-                'location': loc,
-                'velocity': vel,
-                'elasticity': attrs.get('elasticity', self.config['elasticity']),
-                'friction': attrs.get('friction', self.config['friction']),
+                'length': new_length,
+                'angle': agent.get('angle', 0.0),
+                'n_segments': n_new,
+                'adhesins': agent.get('adhesins', 0.0),
             }
-            self._create_bending(agent_id, new_attrs)
             return
 
         # Mass-only change: redistribute across sub-bodies

@@ -94,6 +94,10 @@ def register_pymunk_agent_dispatches():
         if 'attached' in update and update['attached'] is not None:
             result['attached'] = update['attached']
 
+        # Pressure (float): set semantics — recomputed each tick by Pressure step
+        if 'pressure' in update and update['pressure'] is not None:
+            result['pressure'] = update['pressure']
+
         return result, []
 
     @reconcile.dispatch
@@ -147,6 +151,12 @@ def register_pymunk_agent_dispatches():
             v = u.get('attached') if isinstance(u, dict) else None
             if v is not None:
                 result['attached'] = v
+
+        # Pressure: last non-None wins
+        for u in non_none:
+            v = u.get('pressure') if isinstance(u, dict) else None
+            if v is not None:
+                result['pressure'] = v
 
         return result if result else None
 

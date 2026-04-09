@@ -22,6 +22,7 @@ from multi_cell.processes.multibody import make_initial_state, get_mother_machin
 from multi_cell.processes.grow_divide import add_grow_divide_to_agents, make_grow_divide_process
 from multi_cell.processes.remove_crossing import make_remove_crossing_process
 from multi_cell.processes.secrete_eps import add_secrete_eps_to_agents
+from multi_cell.processes.pressure import make_pressure_process
 from multi_cell.plots.multibody_plots import simulation_to_gif
 
 
@@ -212,39 +213,55 @@ def attachment_document(config=None):
     return document
 
 
-def bending_cells_document(config=None):
-    """Bending cells: each cell is a multi-segment compound body that can flex.
+def bending_pressure_document(config=None):
+    """Bending cells with pressure-inhibited growth.
 
-    Same setup as daughter_machine but cells are wired to the bending_cells port,
-    so PymunkProcess constructs each cell as N rigid sub-segments linked by
-    pivot joints and damped rotary springs. The cells visibly bend under
-    pressure as the colony fills the chamber.
+    Each cell is built as a multi-segment compound body (pivot joints + damped
+    rotary springs) so it can flex under load. A Pressure step computes a
+    per-cell pressure proxy from neighbor and wall contacts, and GrowDivide
+    scales each cell's growth rate by exp(-pressure / pressure_k). Cells under
+    high mechanical pressure grow more slowly AND visibly bend.
     """
     config = config or {}
     env_size = config.get('env_size', 30)
     interval = config.get('interval', 30.0)
-    growth_rate = config.get('growth_rate', 0.000289)
+    growth_rate = config.get('growth_rate', 0.000578)  # ~20 min unstressed doubling
     cell_radius = config.get('cell_radius', 0.5)
     cell_length = config.get('cell_length', 2.0)
     density = config.get('density', 0.02)
-    flow_x = config.get('flow_x', env_size * 0.85)
+    n_cells = config.get('n_cells', 1)
+    contact_slack = config.get('contact_slack', 0.2)
+    pressure_scale = config.get('pressure_scale', 1.0)
+    pressure_k = config.get('pressure_k', 1.5)
     n_segments = config.get('n_bending_segments', 4)
-    stiffness = config.get('bending_stiffness', 30.0)
+    stiffness = config.get('bending_stiffness', 15.0)
     damping = config.get('bending_damping', 5.0)
-    jitter = config.get('jitter_per_second', 1e-4)
-    use_flow_channel = config.get('use_flow_channel', True)
+    jitter = config.get('jitter_per_second', 0.0)
     division_threshold = config.get('division_threshold', None)
     if division_threshold is None:
         division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
 
-    initial_state = make_initial_state(
-        n_microbes=1,
-        n_particles=0,
-        env_size=env_size,
-        microbe_length_range=(cell_length, cell_length),
-        microbe_radius_range=(cell_radius, cell_radius),
-        microbe_mass_density=density,
-    )
+    rng = make_rng(11)
+    cells = {}
+    cx_mid = env_size / 2.0
+    cy_mid = env_size / 2.0
+    for i in range(n_cells):
+        cx = cx_mid + rng.uniform(-1.0, 1.0)
+        cy = cy_mid + rng.uniform(-1.0, 1.0)
+        aid, cell = build_microbe(
+            rng, env_size,
+            agent_id=f'cell_{i}',
+            x=cx, y=cy,
+            angle=rng.uniform(0, math.pi),
+            length=cell_length,
+            radius=cell_radius,
+            density=density,
+            velocity=(0, 0),
+            speed_range=(0, 0),
+        )
+        cells[aid] = cell
+
+    initial_state = {'cells': cells, 'particles': {}}
 
     add_grow_divide_to_agents(
         initial_state,
@@ -254,6 +271,7 @@ def bending_cells_document(config=None):
             'rate': growth_rate,
             'threshold': division_threshold,
             'mutate': True,
+            'pressure_k': pressure_k,
         },
     )
 
@@ -265,8 +283,8 @@ def bending_cells_document(config=None):
             'address': 'local:PymunkProcess',
             'config': {
                 'env_size': env_size,
-                'gravity': 0,
-                'elasticity': 0.1,
+                'gravity': 0.0,
+                'elasticity': 0.0,
                 'jitter_per_second': jitter,
                 'n_bending_segments': n_segments,
                 'bending_stiffness': stiffness,
@@ -282,17 +300,19 @@ def bending_cells_document(config=None):
                 'circle_particles': ['particles'],
             },
         },
+        'pressure': make_pressure_process(
+            agents_key='cells',
+            contact_slack=contact_slack,
+            pressure_scale=pressure_scale,
+            env_size=env_size,
+            wall_weight=2.0,
+        ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],
             'particles': ['particles'],
             'time': ['global_time'],
         }),
     }
-    if use_flow_channel:
-        document['remove_crossing'] = make_remove_crossing_process(
-            x_max=flow_x,
-            agents_key='cells',
-        )
     return document
 
 
@@ -519,18 +539,6 @@ EXPERIMENT_REGISTRY = {
         },
         'description': 'Multiple E. coli-scale cells grow and divide in an environment seeded with passive particles of varying sizes. The cells push and rearrange the particles as they grow.',
     },
-    'bending_cells': {
-        'document': bending_cells_document,
-        'time': 18000.0,  # 5 hours
-        'config': {
-            'env_size': 30,
-            'n_bending_segments': 4,
-            'bending_stiffness': 15.0,
-            'jitter_per_second': 0.0,  # disable Brownian jitter
-            'use_flow_channel': False,  # no removal — colony grows freely
-        },
-        'description': 'Cells modeled as multi-segment compound bodies that can bend under pressure. Each cell is built from 4 rigid sub-segments linked by pivot joints and damped rotary springs, so the colony deforms more naturally as cells push against each other.',
-    },
     'attachment': {
         'document': attachment_document,
         'time': 14400.0,  # 4 hours
@@ -541,6 +549,23 @@ EXPERIMENT_REGISTRY = {
             'adhesion_threshold': 0.5,
         },
         'description': 'Cells start with adhesin molecules that let them attach to the bottom surface. When a cell touches the surface and carries enough adhesins, a PivotJoint pins it in place. Adhesins split between daughters at division, so descendants of an attached lineage gradually exhaust the pool and the youngest cells eventually fail to attach.',
+    },
+    'bending_pressure': {
+        'document': bending_pressure_document,
+        'time': 21600.0,  # 6 hours
+        'config': {
+            'env_size': 30,
+            'n_cells': 1,
+            'contact_slack': 0.2,
+            'pressure_scale': 1.0,
+            'pressure_k': 1.5,
+            'n_bending_segments': 4,
+            'bending_stiffness': 8.0,
+            'bending_damping': 4.0,
+            'color_by_pressure': True,
+            'pressure_max_visual': 5.0,
+        },
+        'description': 'A single cell grows into a colony of multi-segment bending capsules. A Pressure step computes per-cell mechanical pressure from neighbor and wall contacts; GrowDivide inhibits growth as rate * exp(-pressure / pressure_k). Cells under high mechanical pressure grow more slowly AND visibly bend, so the colony shows both compositional inhibition (red interior) and physical deformation.',
     },
 }
 
@@ -680,12 +705,15 @@ def run_experiment(name, output_dir='out'):
     if multibody_cfg.get('adhesion_enabled'):
         adhesion_surface = multibody_cfg.get('adhesion_surface', 'bottom')
 
+    color_by_pressure = bool(config.get('color_by_pressure', False))
     gif_path = simulation_to_gif(
         results,
         filename=name,
         config=gif_config,
         out_dir=output_dir,
-        color_by_phylogeny=True,
+        color_by_phylogeny=not color_by_pressure,
+        color_by_pressure=color_by_pressure,
+        pressure_max=float(config.get('pressure_max_visual', 8.0)),
         skip_frames=skip,
         frame_duration_ms=50,
         show_time_title=True,
