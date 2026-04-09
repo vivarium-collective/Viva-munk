@@ -5,7 +5,7 @@ import math, random
 from process_bigraph import Process
 from multi_cell.processes.multibody import build_microbe, daughter_locations
 
-def make_grow_divide_process(config=None, agents_key='cells', interval=10.0):
+def make_grow_divide_process(config=None, agents_key='cells', interval=30.0):
     """Create a grow_divide process spec to embed in an agent's state."""
     config = config or {}
     config.setdefault('agents_key', agents_key)

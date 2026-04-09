@@ -32,7 +32,7 @@ def single_cell_growth_document(config=None):
     """A single cell growing in an empty environment. E. coli proportions by default."""
     config = config or {}
     env_size = config.get('env_size', 30)
-    interval = config.get('interval', 10.0)
+    interval = config.get('interval', 30.0)
     growth_rate = config.get('growth_rate', 0.000289)  # ln(2)/2400 ~ 40 min doubling
     cell_radius = config.get('cell_radius', 0.5)
     cell_length = config.get('cell_length', 2.0)
@@ -129,7 +129,7 @@ def mother_machine_document(config=None):
         env_size = max(width, height)
     env_size = float(env_size)
 
-    interval = config.get('interval', 10.0)
+    interval = config.get('interval', 30.0)
     growth_rate = config.get('growth_rate', 0.000289)  # ln(2)/2400 ~ 40 min doubling
 
     # Build barriers: vertical walls creating narrow channels
@@ -217,7 +217,7 @@ def biofilm_document(config=None):
     """Cells growing and secreting EPS particles that accumulate into a biofilm."""
     config = config or {}
     env_size = config.get('env_size', 30)
-    interval = config.get('interval', 10.0)
+    interval = config.get('interval', 30.0)
     growth_rate = config.get('growth_rate', 0.000289)
     cell_radius = config.get('cell_radius', 0.5)
     cell_length = config.get('cell_length', 2.0)
@@ -229,11 +229,13 @@ def biofilm_document(config=None):
 
     secretion_rate = config.get('secretion_rate', 0.005)
     eps_radius = config.get('eps_radius', 0.15)
+    n_initial_particles = config.get('n_initial_particles', 0)
 
     initial_state = make_initial_state(
         n_microbes=n_cells,
-        n_particles=0,
+        n_particles=n_initial_particles,
         env_size=env_size,
+        particle_radius_range=(eps_radius, eps_radius * 10),
         microbe_length_range=(cell_length, cell_length),
         microbe_radius_range=(cell_radius, cell_radius),
         microbe_mass_density=density,
@@ -308,21 +310,22 @@ EXPERIMENT_REGISTRY = {
         'document': mother_machine_document,
         'time': 14400.0,  # 4 hours ~ 6 generations
         'config': {
-            'n_channels': 12,
-            'channel_height': 12.0,
-            'flow_channel_y': 10.0,
+            'n_channels': 20,
+            'channel_height': 25.0,
+            'flow_channel_y': 22.0,
         },
         'description': 'E. coli-scale cells seeded at the bottom of narrow dead-end channels (~1.5 um wide). Cells grow vertically and divide; daughters are pushed upward. Cells crossing the flow channel (top) are removed from the simulation.',
     },
-    'biofilm': {
+    'with_particles': {
         'document': biofilm_document,
         'time': 14400.0,  # 4 hours
         'config': {
-            'env_size': 30,
-            'n_cells': 3,
-            'secretion_rate': 0.005,
+            'env_size': 60,
+            'n_cells': 5,
+            'n_initial_particles': 200,
+            'secretion_rate': 0.01,
         },
-        'description': 'Multiple E. coli-scale cells grow, divide, and secrete EPS particles. The EPS accumulates around the colony, forming a biofilm-like matrix.',
+        'description': 'Multiple E. coli-scale cells grow and divide in an environment seeded with particles of varying sizes. Cells also secrete small EPS particles that accumulate around the colony.',
     },
 }
 

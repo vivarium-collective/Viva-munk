@@ -70,7 +70,7 @@ def local_impulse_point_for_shape(shape):
 class PymunkProcess(Process):
     config_schema = {
         'env_size': {'_type': 'float', '_default': 500},
-        'substeps': {'_type': 'integer', '_default': 100},
+        'substeps': {'_type': 'integer', '_default': 10},
         'damping_per_second': {'_type': 'float', '_default': 0.1},
         'gravity': {'_type': 'float', '_default': 0.0},
         'friction': {'_type': 'float', '_default': 0.8},
@@ -450,11 +450,12 @@ def build_particle(
     # kinematics
     velocity=None, speed_range=(0.0, 10.0),
     # geometry / mass (circle)
-    radius=None, mass=None, density=0.015
+    radius=None, mass=None, density=0.015,
+    radius_range=None,
 ):
     # derive geometry/mass if needed
     if radius is None and mass is None:
-        radius = rng.uniform(1.0, 10.0)
+        radius = rng.uniform(*radius_range) if radius_range else rng.uniform(1.0, 10.0)
     if mass is None:
         mass = circle_mass_from_radius(radius, density)
     if radius is None:
@@ -638,8 +639,7 @@ def make_initial_state(
             elasticity=elasticity,
             density=particle_mass_density,
             speed_range=particle_speed_range,
-            # you can override radius/mass/velocity here if desired
-            # radius=..., mass=..., velocity=(vx, vy), x=..., y=...
+            radius_range=particle_radius_range,
         )
     )
 

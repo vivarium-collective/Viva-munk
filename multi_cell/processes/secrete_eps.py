@@ -129,7 +129,7 @@ class SecreteEPS(Process):
             return (cx + offset * math.cos(theta), cy + offset * math.sin(theta))
 
 
-def make_secrete_eps_process(config=None, agents_key='cells', particles_key='particles', interval=10.0):
+def make_secrete_eps_process(config=None, agents_key='cells', particles_key='particles', interval=30.0):
     """Create a SecreteEPS process spec to embed in an agent's state."""
     config = config or {}
     config.setdefault('agents_key', agents_key)
