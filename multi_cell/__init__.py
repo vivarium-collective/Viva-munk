@@ -14,7 +14,10 @@ from multi_cell.processes.grow_divide import GrowDivide
 from multi_cell.processes.remove_crossing import RemoveCrossing
 from multi_cell.processes.secrete_eps import SecreteEPS
 from multi_cell.processes.pressure import Pressure
+from multi_cell.processes.diffusion_advection import DiffusionAdvection
+from multi_cell.processes.cell_field_exchange import CellFieldExchange
 from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
+from multi_cell.types import positive_types
 
 # Register custom dispatches once at module import
 register_pymunk_agent_dispatches()
@@ -24,6 +27,9 @@ def register_pymunk_types(core):
     # Use the optimized PymunkAgent Node subclass instead of a dict schema.
     # This eliminates per-field dispatch overhead in apply/reconcile/realize.
     core.register_type('pymunk_agent', PymunkAgent())
+    # Concentration / field types used by DiffusionAdvection + CellFieldExchange
+    for name, schema in positive_types.items():
+        core.register_type(name, schema)
 
 
 def register_processes(core):
@@ -32,6 +38,8 @@ def register_processes(core):
     core.register_link('RemoveCrossing', RemoveCrossing)
     core.register_link('SecreteEPS', SecreteEPS)
     core.register_link('Pressure', Pressure)
+    core.register_link('DiffusionAdvection', DiffusionAdvection)
+    core.register_link('CellFieldExchange', CellFieldExchange)
     core.register_link('Composite', Composite)
     core.register_link('RAMEmitter', RAMEmitter)
 

@@ -104,11 +104,15 @@ class GifRenderer:
     def __init__(
         self, env_size, barriers, figure_size_inches, dpi, show_time_title,
         world_pad, max_line_px, xlim=None, ylim=None, flow_regions=None,
-        draw_walls=True, adhesion_surface=None, pressure_colorbar=None,
+        draw_walls=True, adhesion_surface=None, field_overlay=None,
     ):
         self.env_size = float(env_size)
         self.show_time_title = show_time_title
         self.max_line_px = int(max_line_px)
+        # Optional concentration-field background overlay
+        # field_overlay = {'key': 'fields', 'mol_id': 'glucose', 'vmin', 'vmax', 'cmap', 'alpha', 'colorbar': bool}
+        self.field_overlay_cfg = field_overlay
+        self.field_overlay_artist = None
 
         x0, x1 = xlim if xlim else (0, self.env_size)
         y0, y1 = ylim if ylim else (0, self.env_size)
@@ -124,16 +128,17 @@ class GifRenderer:
             fig_w = base
             fig_h = base * (data_h / data_w)
 
-        # When a colorbar is shown, widen the figure so the colorbar lives
-        # in its own column on the right, outside the data axes.
-        cbar_extra = 0.18 * fig_w if pressure_colorbar else 0.0
+        # When a field colorbar is shown, widen the figure so it lives in its
+        # own column to the right of the data axes.
+        show_field_cbar = bool(field_overlay and field_overlay.get('colorbar'))
+        cbar_extra = 0.22 * fig_w if show_field_cbar else 0.0
 
         self.fig = plt.figure(figsize=(fig_w + cbar_extra, fig_h), dpi=dpi)
         self.canvas = FigureCanvas(self.fig)
-        if pressure_colorbar:
+        if show_field_cbar:
             # Reserve a column on the right for the colorbar
             ax_frac = fig_w / (fig_w + cbar_extra)
-            self.ax = self.fig.add_axes([0.0, 0.0, ax_frac * 0.95, 1.0])
+            self.ax = self.fig.add_axes([0.02, 0.02, ax_frac * 0.93, 0.96])
         else:
             self.ax = self.fig.add_subplot(111)
         self.ax.set_aspect('equal', adjustable='box')
@@ -150,6 +155,10 @@ class GifRenderer:
         self.pad_px = int(round(world_pad * self.ypu))
         self.title_obj = self.ax.set_title("") if show_time_title else None
 
+        # Field overlay (heatmap) drawn first so cells render on top of it
+        if self.field_overlay_cfg:
+            self._init_field_overlay(x0, x1, y0, y1)
+
         # draw flow regions, walls, adhesion surface, and barriers once
         if flow_regions:
             self._draw_flow_regions(flow_regions, x0, x1, y0, y1)
@@ -158,8 +167,8 @@ class GifRenderer:
         if adhesion_surface:
             self._draw_adhesion_surface(adhesion_surface)
         self._draw_barriers(barriers)
-        if pressure_colorbar:
-            self._draw_pressure_colorbar(pressure_colorbar)
+        if show_field_cbar:
+            self._draw_field_colorbar(field_overlay)
 
         # pools (grow-on-demand)
         self.circle_pool = []
@@ -189,6 +198,45 @@ class GifRenderer:
             )
             self.ax.add_patch(rect)
 
+    def _init_field_overlay(self, x0, x1, y0, y1):
+        """Set up an imshow artist for a 2D concentration field background.
+
+        Creates the artist eagerly with a (1, 1) placeholder so the colorbar
+        can be linked to it via fig.colorbar(artist, ...). The placeholder is
+        replaced by set_data on the first frame; the explicit Normalize keeps
+        the color scale (and the colorbar's range) locked across frames.
+        """
+        from matplotlib.colors import Normalize
+        cfg = self.field_overlay_cfg
+        cmap = cfg.get('cmap', 'YlGn')
+        vmin = float(cfg.get('vmin', 0.0))
+        vmax = float(cfg.get('vmax', 1.0))
+        alpha = float(cfg.get('alpha', 0.85))
+        # Locked normalization shared by both heatmap and colorbar.
+        self._field_overlay_norm = Normalize(vmin=vmin, vmax=vmax, clip=False)
+        self.field_overlay_artist = self.ax.imshow(
+            np.zeros((1, 1), dtype=float),
+            extent=(x0, x1, y0, y1),
+            origin='lower',
+            cmap=cmap,
+            norm=self._field_overlay_norm,
+            alpha=alpha,
+            interpolation='nearest',
+            zorder=-2,
+        )
+
+    def _update_field_overlay(self, step):
+        if not self.field_overlay_cfg or self.field_overlay_artist is None:
+            return
+        cfg = self.field_overlay_cfg
+        mol_id = cfg.get('mol_id')
+        if not mol_id:
+            return
+        arr = (step.get(cfg.get('key', 'fields')) or {}).get(mol_id)
+        if arr is None:
+            return
+        self.field_overlay_artist.set_data(np.asarray(arr, dtype=float))
+
     def _draw_walls(self):
         """Draw the four chamber walls as a thin gray rectangle outline."""
         from matplotlib.patches import Rectangle
@@ -215,25 +263,27 @@ class GifRenderer:
             return
         self.ax.add_line(line)
 
-    def _draw_pressure_colorbar(self, info):
-        """Add a gray→red colorbar in its own column to the right of the data axes."""
-        from matplotlib.colors import LinearSegmentedColormap
-        from matplotlib.cm import ScalarMappable
-        from matplotlib.colors import Normalize
-        pmax = float(info.get('pmax', 8.0))
-        cmap = LinearSegmentedColormap.from_list(
-            'pressure', [(0.7, 0.7, 0.7), (0.85, 0.1, 0.1)])
-        norm = Normalize(vmin=0.0, vmax=pmax)
-        sm = ScalarMappable(norm=norm, cmap=cmap)
-        sm.set_array([])
-        # Place the colorbar in the reserved right column
+    def _draw_field_colorbar(self, field_cfg):
+        """Add a colorbar linked directly to the field-overlay imshow artist
+        so its range and tick labels stay locked to the artist's Normalize."""
+        if self.field_overlay_artist is None:
+            return
+        label = field_cfg.get('colorbar_label') or field_cfg.get('mol_id') or 'concentration'
         ax_pos = self.ax.get_position()
         cax_left = ax_pos.x1 + 0.02
-        cax_width = max(0.02, 1.0 - cax_left - 0.05)
-        cax = self.fig.add_axes([cax_left, ax_pos.y0 + 0.10, cax_width * 0.4, ax_pos.height * 0.7])
-        cbar = self.fig.colorbar(sm, cax=cax)
-        cbar.set_label('pressure', fontsize=9)
-        cbar.ax.tick_params(labelsize=8)
+        cax_width = max(0.02, 1.0 - cax_left - 0.04)
+        cax = self.fig.add_axes([cax_left, ax_pos.y0 + 0.10,
+                                 cax_width * 0.4, ax_pos.height * 0.7])
+        cbar = self.fig.colorbar(self.field_overlay_artist, cax=cax)
+        cbar.set_label(label, fontsize=10)
+        cbar.ax.tick_params(labelsize=9)
+        # Pin the tick locations so matplotlib doesn't recompute them per frame.
+        vmin = float(field_cfg.get('vmin', 0.0))
+        vmax = float(field_cfg.get('vmax', 1.0))
+        ticks = np.linspace(vmin, vmax, 6)
+        cbar.set_ticks(ticks)
+        cbar.set_ticklabels([f'{t:.2f}' for t in ticks])
+        self._field_colorbar = cbar
 
     def _draw_barriers(self, barriers, color='gray'):
         dpi_fig = self.fig.dpi
@@ -264,6 +314,9 @@ class GifRenderer:
     def draw_frame(self, step, agents_key, color_fn, max_radius_px):
         c_vis = s_vis = 0
         layer = step.get(agents_key) or {}
+
+        # Update field background overlay (if configured)
+        self._update_field_overlay(step)
 
         # Defensive: hide ALL pool slots before drawing to guarantee no stale
         # state from a previous frame can leak through.
@@ -364,6 +417,7 @@ def simulation_to_gif(
     uniform_color=(0.2, 0.6, 0.9),  # <set None to disable uniforming
     particle_color=(0.85, 0.85, 0.55),  # default EPS/particle color (pale yellow)
     frame_duration_ms=100,  # milliseconds per frame in the GIF
+    field_overlay=None,     # optional dict {'mol_id', 'vmax', 'cmap', 'alpha'} for heatmap background
 ):
     """
     Efficient Matplotlib renderer:
@@ -421,14 +475,38 @@ def simulation_to_gif(
         def _color(aid, ent=None):
             return uniform_color if uniform_color is not None else default_rgb
 
+    # If a field overlay is requested, pre-scan all frames so the colorbar
+    # range is constant across the GIF (otherwise per-frame autoscaling would
+    # make the colors drift). The user-supplied vmin/vmax win if present.
+    if field_overlay and field_overlay.get('mol_id'):
+        key = field_overlay.get('key', 'fields')
+        mol_id = field_overlay['mol_id']
+        global_min = float('inf')
+        global_max = float('-inf')
+        for step in frames:
+            arr = (step.get(key) or {}).get(mol_id)
+            if arr is None:
+                continue
+            a = np.asarray(arr, dtype=float)
+            if a.size == 0:
+                continue
+            global_min = min(global_min, float(a.min()))
+            global_max = max(global_max, float(a.max()))
+        if not math.isfinite(global_min):
+            global_min = 0.0
+        if not math.isfinite(global_max) or global_max <= global_min:
+            global_max = global_min + 1.0
+        field_overlay = dict(field_overlay)
+        field_overlay.setdefault('vmin', global_min)
+        field_overlay.setdefault('vmax', global_max)
+
     # render
-    pressure_colorbar = None  # colorbar disabled
     renderer = GifRenderer(
         env_size, barriers, figure_size_inches, dpi, show_time_title,
         world_pad, max_line_px, xlim=xlim, ylim=ylim,
         flow_regions=flow_regions, draw_walls=draw_walls,
         adhesion_surface=adhesion_surface,
-        pressure_colorbar=pressure_colorbar,
+        field_overlay=field_overlay,
     )
     try:
         pil_frames = [renderer.draw_frame(step, agents_key, _color, max_radius_px) for step in frames]

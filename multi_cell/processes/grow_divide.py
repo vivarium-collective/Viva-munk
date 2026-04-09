@@ -64,6 +64,16 @@ class GrowDivide(Process):
         # Pressure inhibition: effective_rate = rate * exp(-pressure / pressure_k)
         # When pressure >> pressure_k, growth is strongly suppressed.
         'pressure_k':    {'_type': 'float', '_default': 5.0},
+
+        # --- nutrient gating ---
+        # If nutrient_key is non-empty, growth rate is multiplied by a Monod
+        # factor S/(Km+S) where S = agent['local'][nutrient_key], and the
+        # corresponding amount of nutrient is debited from agent['exchange']
+        # so a downstream CellFieldExchange step removes it from the field.
+        'nutrient_key':   {'_type': 'string', '_default': ''},
+        'nutrient_km':    {'_type': 'float', '_default': 0.5},
+        # biomass produced per unit of nutrient consumed (yield)
+        'nutrient_yield': {'_type': 'float', '_default': 1.0},
     }
 
     # ---------------- internal helpers ----------------
@@ -108,10 +118,16 @@ class GrowDivide(Process):
                 float(self.config['threshold_max']),
                 rng
             )
+        # Carry forward nutrient/pressure config so daughters inherit gating.
+        # Without this, dividers lose nutrient_key after the first division.
         return {
             'agents_key': self.config['agents_key'],
             'rate': rate,
             'threshold': thr,
+            'pressure_k': float(self.config.get('pressure_k', 5.0)),
+            'nutrient_key': self.config.get('nutrient_key', '') or '',
+            'nutrient_km': float(self.config.get('nutrient_km', 0.5)),
+            'nutrient_yield': float(self.config.get('nutrient_yield', 1.0)),
         }
 
     # ---------------- IO ----------------
@@ -147,6 +163,19 @@ class GrowDivide(Process):
         if pressure > 0 and pressure_k > 0:
             rate = rate * math.exp(-pressure / pressure_k)
 
+        # Nutrient gating (Monod): rate *= S / (Km + S) where S is the
+        # local concentration sampled by CellFieldExchange.
+        nutrient_key = self.config.get('nutrient_key', '') or ''
+        local_S = 0.0
+        if nutrient_key:
+            local_dict = agent.get('local') or {}
+            local_S = float(local_dict.get(nutrient_key, 0.0) or 0.0)
+            km = float(self.config.get('nutrient_km', 0.5))
+            if local_S <= 0.0:
+                rate = 0.0
+            else:
+                rate = rate * (local_S / (km + local_S))
+
         # mass growth
         m = float(agent.get('mass', 0.0))
         if not (m > 0.0):
@@ -179,6 +208,13 @@ class GrowDivide(Process):
                 update = {agent_id: {'type': t, 'mass': dm, 'length': L_new - L}}
             else:
                 update = {agent_id: {'type': t, 'mass': dm}}
+
+        # If nutrient gating is enabled, debit consumed nutrient from
+        # agent.exchange (CellFieldExchange will apply it to the field).
+        if nutrient_key and dm > 0.0:
+            yield_coef = float(self.config.get('nutrient_yield', 1.0)) or 1.0
+            consumed = dm / yield_coef  # amount of nutrient eaten this tick
+            update[agent_id]['exchange'] = {nutrient_key: -consumed}
 
         # --- Division ---
         if m_new >= float(thresh):

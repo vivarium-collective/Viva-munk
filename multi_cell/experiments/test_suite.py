@@ -18,11 +18,12 @@ from process_bigraph import Composite, gather_emitter_results
 from process_bigraph.emitter import emitter_from_wires
 
 from multi_cell import core_import
-from multi_cell.processes.multibody import make_initial_state, get_mother_machine_config, build_microbe, make_rng
-from multi_cell.processes.grow_divide import add_grow_divide_to_agents, make_grow_divide_process
+from multi_cell.processes.multibody import make_initial_state, build_microbe, make_rng
+from multi_cell.processes.grow_divide import add_grow_divide_to_agents
 from multi_cell.processes.remove_crossing import make_remove_crossing_process
 from multi_cell.processes.secrete_eps import add_secrete_eps_to_agents
 from multi_cell.processes.pressure import make_pressure_process
+from multi_cell.processes.cell_field_exchange import make_cell_field_exchange_process
 from multi_cell.plots.multibody_plots import simulation_to_gif
 
 
@@ -207,6 +208,129 @@ def attachment_document(config=None):
         'emitter': emitter_from_wires({
             'agents': ['cells'],
             'particles': ['particles'],
+            'time': ['global_time'],
+        }),
+    }
+    return document
+
+
+def glucose_growth_document(config=None):
+    """Cells grow on a glucose field, eat glucose, and stop growing when it runs out.
+
+    A 2D glucose concentration field is initialized uniformly across the
+    chamber. DiffusionAdvection diffuses it. CellFieldExchange runs as a
+    Process every interval — it samples the local concentration onto each
+    cell (so GrowDivide can read it) and applies the cell's exchange amounts
+    back into the field bin (subtracting uptake). GrowDivide gates its rate
+    by Monod S/(Km+S) on local glucose, so cells stop growing once their
+    local patch is depleted.
+    """
+    import numpy as np
+    config = config or {}
+    # Spatial / temporal scales: env in μm, time in s, glucose in mM,
+    # diffusion in μm²/s. Cell length 2 μm + radius 0.5 μm fits inside
+    # a 3 μm bin (24 / 8 = 3).
+    env_size = config.get('env_size', 24)            # μm
+    n_bins = config.get('n_bins', (8, 8))             # 3 μm per bin
+    interval = config.get('interval', 30.0)           # s
+    growth_rate = config.get('growth_rate', 0.0015)   # 1/s
+    cell_radius = config.get('cell_radius', 0.5)
+    cell_length = config.get('cell_length', 2.0)
+    density = config.get('density', 0.02)
+    n_cells = config.get('n_cells', 3)
+    glucose_init = config.get('glucose_init', 5.0)    # mM
+    glucose_km = config.get('glucose_km', 0.5)        # mM (Monod K_s)
+    glucose_diffusion = config.get('glucose_diffusion', 0.05)  # μm²/s
+    nutrient_yield = config.get('nutrient_yield', 0.025)  # cell mass per mM glucose
+    division_threshold = config.get('division_threshold', None)
+    if division_threshold is None:
+        division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
+
+    rng = make_rng(13)
+    cells = {}
+    cx_mid = env_size / 2.0
+    cy_mid = env_size / 2.0
+    for i in range(n_cells):
+        cx = cx_mid + rng.uniform(-3.0, 3.0)
+        cy = cy_mid + rng.uniform(-3.0, 3.0)
+        aid, cell = build_microbe(
+            rng, env_size,
+            agent_id=f'cell_{i}',
+            x=cx, y=cy,
+            angle=rng.uniform(0, math.pi),
+            length=cell_length,
+            radius=cell_radius,
+            density=density,
+            velocity=(0, 0),
+            speed_range=(0, 0),
+        )
+        cells[aid] = cell
+
+    initial_state = {'cells': cells}
+    add_grow_divide_to_agents(
+        initial_state,
+        agents_key='cells',
+        config={
+            'agents_key': 'cells',
+            'rate': growth_rate,
+            'threshold': division_threshold,
+            'mutate': False,
+            'pressure_k': 1e9,  # disable pressure inhibition for this experiment
+            'nutrient_key': 'glucose',
+            'nutrient_km': glucose_km,
+            'nutrient_yield': nutrient_yield,
+        },
+    )
+
+    nx, ny = int(n_bins[0]), int(n_bins[1])
+    glucose_field = np.full((ny, nx), float(glucose_init), dtype=float)
+
+    document = {
+        'cells': initial_state['cells'],
+        'fields': {'glucose': glucose_field},
+        'multibody': {
+            '_type': 'process',
+            'address': 'local:PymunkProcess',
+            'config': {
+                'env_size': env_size,
+                'gravity': 0.0,
+                'elasticity': 0.0,
+            },
+            'interval': interval,
+            'inputs': {
+                'segment_cells': ['cells'],
+            },
+            'outputs': {
+                'segment_cells': ['cells'],
+            },
+        },
+        'diffusion': {
+            '_type': 'process',
+            'address': 'local:DiffusionAdvection',
+            'config': {
+                'n_bins': (nx, ny),
+                'bounds': (float(env_size), float(env_size)),
+                'default_diffusion_rate': glucose_diffusion,
+                'diffusion_coeffs': {'glucose': glucose_diffusion},
+                'advection_coeffs': {'glucose': (0.0, 0.0)},
+            },
+            'interval': interval,
+            'inputs': {'fields': ['fields']},
+            'outputs': {'fields': ['fields']},
+        },
+        'cell_field_exchange': make_cell_field_exchange_process(
+            n_bins=(nx, ny),
+            bounds=(float(env_size), float(env_size)),
+            # Shallow chamber: small bin volume → bigger ΔC per uptake amount,
+            # so cells deplete their bin much faster.
+            depth=config.get('depth', 0.1),
+            agents_key='cells',
+            fields_key='fields',
+            interval=interval,
+        ),
+        'emitter': emitter_from_wires({
+            'agents': ['cells'],
+            'fields': ['fields'],
             'time': ['global_time'],
         }),
     }
@@ -550,6 +674,29 @@ EXPERIMENT_REGISTRY = {
         },
         'description': 'Cells start with adhesin molecules that let them attach to the bottom surface. When a cell touches the surface and carries enough adhesins, a PivotJoint pins it in place. Adhesins split between daughters at division, so descendants of an attached lineage gradually exhaust the pool and the youngest cells eventually fail to attach.',
     },
+    'glucose_growth': {
+        'document': glucose_growth_document,
+        'time': 7200.0,  # 2 hours
+        'config': {
+            'env_size': 48,            # μm
+            'n_bins': (16, 16),        # 3 μm per bin (each cell fits in one bin)
+            'n_cells': 3,
+            'glucose_init': 5.0,       # mM
+            'glucose_km': 0.5,         # mM (Monod K_s)
+            'glucose_diffusion': 0.05, # μm²/s
+            'nutrient_yield': 0.025,
+            'growth_rate': 0.0015,
+            'field_overlay': {
+                'mol_id': 'glucose',
+                'vmin': 0.0, 'vmax': 5.0,
+                'cmap': 'YlGn',          # pale yellow → deep green
+                'alpha': 0.7,
+                'colorbar': True,
+                'colorbar_label': 'glucose (mM)',
+            },
+        },
+        'description': 'Cells grow on a 2D glucose field. A DiffusionAdvection process spreads the glucose; CellFieldExchange runs every tick to sample the local concentration onto each cell and apply the cell\'s consumption back into the field bin. GrowDivide gates rate by Monod kinetics rate × glucose / (K_s + glucose), so cells slow and stop growing as their local glucose runs out. Units: μm, mM, s; bins are 3 μm so a single cell fits inside one grid site. The background heatmap shows glucose, with a colorbar on the right.',
+    },
     'bending_pressure': {
         'document': bending_pressure_document,
         'time': 21600.0,  # 6 hours
@@ -706,6 +853,7 @@ def run_experiment(name, output_dir='out'):
         adhesion_surface = multibody_cfg.get('adhesion_surface', 'bottom')
 
     color_by_pressure = bool(config.get('color_by_pressure', False))
+    field_overlay = config.get('field_overlay', None)
     gif_path = simulation_to_gif(
         results,
         filename=name,
@@ -723,6 +871,7 @@ def run_experiment(name, output_dir='out'):
         ylim=ylim,
         flow_regions=flow_regions or None,
         adhesion_surface=adhesion_surface,
+        field_overlay=field_overlay,
     )
     print(f'GIF: {gif_path}')
 

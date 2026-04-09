@@ -98,6 +98,17 @@ def register_pymunk_agent_dispatches():
         if 'pressure' in update and update['pressure'] is not None:
             result['pressure'] = update['pressure']
 
+        # local (map[mol_id -> float]): sampled field concentrations at the
+        # cell. CellFieldExchange writes a fresh dict each tick (set semantics).
+        if 'local' in update and update['local'] is not None:
+            result['local'] = update['local']
+
+        # exchange (map[mol_id -> float]): per-molecule deposit/uptake amounts.
+        # Other processes (e.g. uptake kinetics) should accumulate into this
+        # dict; CellFieldExchange resets it to zero after applying it.
+        if 'exchange' in update and update['exchange'] is not None:
+            result['exchange'] = update['exchange']
+
         return result, []
 
     @reconcile.dispatch
@@ -157,6 +168,28 @@ def register_pymunk_agent_dispatches():
             v = u.get('pressure') if isinstance(u, dict) else None
             if v is not None:
                 result['pressure'] = v
+
+        # local: last non-None wins (set semantics)
+        for u in non_none:
+            v = u.get('local') if isinstance(u, dict) else None
+            if v is not None:
+                result['local'] = v
+
+        # exchange: merge dicts so multiple producers can both contribute.
+        # Each entry is summed; an empty {} from CellFieldExchange resets
+        # remaining keys to 0 only when no other producer contributed this tick.
+        merged_exchange = None
+        for u in non_none:
+            v = u.get('exchange') if isinstance(u, dict) else None
+            if v is None:
+                continue
+            if merged_exchange is None:
+                merged_exchange = dict(v)
+            else:
+                for k, val in v.items():
+                    merged_exchange[k] = merged_exchange.get(k, 0.0) + val
+        if merged_exchange is not None:
+            result['exchange'] = merged_exchange
 
         return result if result else None
 
