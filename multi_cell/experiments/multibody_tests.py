@@ -2,29 +2,23 @@
 Tests for pymunk multibody simulations, including growth and division.
 '''
 
-from bigraph_viz import plot_bigraph, VisualizeTypes
-from process_bigraph import Composite, gather_emitter_results, ProcessTypes
+from bigraph_viz import plot_bigraph
+from process_bigraph import Composite, gather_emitter_results
 from process_bigraph.emitter import emitter_from_wires
-from pymunk_process import core_import
-from pymunk_process.processes.multibody import make_initial_state
-from pymunk_process.processes.grow_divide import get_grow_divide_schema
-from pymunk_process.plots.multibody_plots import simulation_to_gif
+from multi_cell import core_import
+from multi_cell.processes.multibody import make_initial_state
+from multi_cell.processes.grow_divide import add_grow_divide_to_agents
+from multi_cell.plots.multibody_plots import simulation_to_gif
 
 
-# core = VisualizeTypes()
-class VivariumTypes(ProcessTypes, VisualizeTypes):
-    def __init__(self):
-        super().__init__()
-
-core = VivariumTypes()
-PYMUNK_CORE = core_import(core)
+PYMUNK_CORE = core_import()
 
 
 def run_pymunk_experiment():
     core = PYMUNK_CORE
     initial_state = make_initial_state(
         n_microbes=2,
-        n_particles=100,
+        n_particles=1000,
         env_size=600,
         elasticity=0.0,
         particle_radius_range=(1, 8),
@@ -46,6 +40,7 @@ def run_pymunk_experiment():
             '_type': 'process',
             'address': 'local:PymunkProcess',
             'config': config,
+            'interval': interval,
             'inputs': {
                 'agents': ['cells'],
                 'particles': ['particles'],
@@ -63,9 +58,10 @@ def run_pymunk_experiment():
                     'time': ['global_time']}
     emitter_state = emitter_from_wires(emitter_spec)
 
-    # grow and divide schema
-    cell_schema = get_grow_divide_schema(
-        core=core,
+    # add grow/divide to each agent
+    add_grow_divide_to_agents(
+        initial_state,
+        agents_key='cells',
         config={
             'agents_key': 'cells',
             'rate': 0.02,
@@ -81,7 +77,6 @@ def run_pymunk_experiment():
             **processes,
             **{'emitter': emitter_state},
         },
-        'composition': cell_schema,
     }
 
     # create the composite simulation
@@ -93,7 +88,7 @@ def run_pymunk_experiment():
 
     # Save visualization of the initial composition
     plot_state = {k: v for k, v in sim.state.items() if k not in ['global_time', 'emitter']}
-    plot_schema = {k: v for k, v in sim.composition.items() if k not in ['global_time', 'emitter']}
+    plot_schema = {k: v for k, v in sim.schema.items() if k not in ['global_time', 'emitter']}
 
     plot_bigraph(
         state=plot_state,

@@ -1,7 +1,7 @@
 [project]
-name = "pymunk-process"
+name = "multi-cell"
 version = "0.0.1"
-description = "a vivarium process for pymunk 2d physics simulations"
+description = "multi-cell simulations with pymunk 2d physics"
 readme = "README.md"
 requires-python = ">=3.7"
 authors = [
@@ -21,5 +21,8 @@ dependencies = [
 
 [tool.setuptools]
 packages = [
-    "pymunk_process"
+    "multi_cell",
+    "multi_cell.processes",
+    "multi_cell.experiments",
+    "multi_cell.plots",
 ]

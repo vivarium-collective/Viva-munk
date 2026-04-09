@@ -103,19 +103,32 @@ def build_phylogeny_colors(frames, agents_key='agents', seed=None, base_s=0.70, 
 class GifRenderer:
     def __init__(
         self, env_size, barriers, figure_size_inches, dpi, show_time_title,
-        world_pad, max_line_px
+        world_pad, max_line_px, xlim=None, ylim=None,
     ):
         self.env_size = float(env_size)
         self.show_time_title = show_time_title
         self.max_line_px = int(max_line_px)
 
-        # fig/ax/canvas
-        self.fig = plt.figure(figsize=figure_size_inches, dpi=dpi)
+        x0, x1 = xlim if xlim else (0, self.env_size)
+        y0, y1 = ylim if ylim else (0, self.env_size)
+
+        # fig/ax/canvas — match figure aspect ratio to data
+        data_w = x1 - x0
+        data_h = y1 - y0
+        base = figure_size_inches[0]
+        if data_h > data_w:
+            fig_w = base * (data_w / data_h)
+            fig_h = base
+        else:
+            fig_w = base
+            fig_h = base * (data_h / data_w)
+
+        self.fig = plt.figure(figsize=(fig_w, fig_h), dpi=dpi)
         self.canvas = FigureCanvas(self.fig)
         self.ax = self.fig.add_subplot(111)
         self.ax.set_aspect('equal', adjustable='box')
-        self.ax.set_xlim(0, self.env_size)
-        self.ax.set_ylim(0, self.env_size)
+        self.ax.set_xlim(x0, x1)
+        self.ax.set_ylim(y0, y1)
         self.ax.set_axis_off()
         self.ax.set_autoscale_on(False)
 
@@ -188,7 +201,7 @@ class GifRenderer:
         for i in range(c_vis, len(self.circle_pool)):
             if self.circle_pool[i].get_visible(): self.circle_pool[i].set_visible(False)
 
-        # segments (shortened by exactly 2*radius)
+        # segments — draw full capsule shape matching pymunk geometry
         for aid, o in layer.items():
             if o.get('type') != 'segment': continue
             L = float(o['length'])
@@ -197,15 +210,16 @@ class GifRenderer:
             cx, cy = o['location']
             if not _finite(cx, cy, L, r, ang) or L <= 0 or r <= 0: continue
 
+            # Full segment endpoints (pymunk capsule extends from -L/2 to +L/2 in local coords)
             half = 0.5 * L
-            length_offset = max(half - r, 0.0)  # trims 1*r off each end
-            dx = math.cos(ang) * length_offset; dy = math.sin(ang) * length_offset
+            dx = math.cos(ang) * half; dy = math.sin(ang) * half
             x0, y0 = cx - dx, cy - dy; x1, y1 = cx + dx, cy + dy
 
-            lw_nom_px = int(round(2.0 * r * self.ypu))
-            lw_px = max(1, min(lw_nom_px, self.max_line_px))
-            lw_data = lw_px / max(self.ypu, 1e-9)
+            # Linewidth = 2*radius in data units (the capsule diameter)
+            lw_data = 2.0 * r
 
+            # Viewport culling
+            lw_px = max(1, int(round(lw_data * self.ypu)))
             p0 = self.ax.transData.transform((x0, y0))
             p1 = self.ax.transData.transform((x1, y1))
             pad = lw_px * 0.5
@@ -215,7 +229,7 @@ class GifRenderer:
 
             art = self._need_segment(s_vis)
             art.set_xdata([x0, x1]); art.set_ydata([y0, y1])
-            art.set_linewidth(lw_data); art.set_color(color_fn(aid))
+            art._lw_data = lw_data; art.set_color(color_fn(aid))
             if not art.get_visible(): art.set_visible(True)
             s_vis += 1
 
@@ -227,14 +241,8 @@ class GifRenderer:
         if self.show_time_title and self.title_obj is not None:
             self.title_obj.set_text(f"t={step.get('time', 0):.1f}")
 
-        # blit
-        self.canvas.restore_region(self.background)
-        if self.show_time_title and self.title_obj is not None: self.ax.draw_artist(self.title_obj)
-        for art in self.circle_pool:
-            if art.get_visible(): self.ax.draw_artist(art)
-        for art in self.segment_pool:
-            if art.get_visible(): self.ax.draw_artist(art)
-        self.canvas.blit(self.ax.bbox)
+        # full redraw
+        self.canvas.draw()
 
         # read back
         w, h = self.fig.canvas.get_width_height()
@@ -256,6 +264,8 @@ def simulation_to_gif(
     world_pad=50.0,       # extra world-units beyond env_size to still draw
     max_line_px=40,       # max segment diameter (2*radius) in pixels
     max_radius_px=40,     # kept for API-compat; used in culling path if needed
+    xlim=None,            # (x0, x1) viewport override
+    ylim=None,            # (y0, y1) viewport override
     # coloring:
     color_by_phylogeny=False,   # << default to uniform color
     color_seed=None,
@@ -263,6 +273,8 @@ def simulation_to_gif(
     mutate_dh=0.05, mutate_ds=0.03, mutate_dv=0.03,
     default_rgb=(0.2, 0.6, 0.9),
     uniform_color=(0.2, 0.6, 0.9),  # <set None to disable uniforming
+    particle_color=(0.85, 0.85, 0.55),  # default EPS/particle color (pale yellow)
+    frame_duration_ms=100,  # milliseconds per frame in the GIF
 ):
     """
     Efficient Matplotlib renderer:
@@ -292,8 +304,11 @@ def simulation_to_gif(
             frames, agents_key=agents_key, seed=color_seed,
             base_s=base_s, base_v=base_v, dh=mutate_dh, ds=mutate_ds, dv=mutate_dv
         )
+        _pc = particle_color
         def _color(aid):
-            # ignore uniform_color when phylogeny is on
+            # Particles (e.g. EPS) get a uniform color
+            if _pc and aid.startswith(('eps_', 'p_')):
+                return _pc
             return rgb_colors.get(aid, default_rgb)
     else:
         # no phylogeny: use uniform if provided, otherwise fallback default
@@ -301,17 +316,18 @@ def simulation_to_gif(
             return uniform_color if uniform_color is not None else default_rgb
 
     # render
-    renderer = GifRenderer(env_size, barriers, figure_size_inches, dpi, show_time_title, world_pad, max_line_px)
+    renderer = GifRenderer(env_size, barriers, figure_size_inches, dpi, show_time_title, world_pad, max_line_px, xlim=xlim, ylim=ylim)
     try:
         pil_frames = [renderer.draw_frame(step, agents_key, _color, max_radius_px) for step in frames]
     finally:
         renderer.close()
 
-    # save
+    # save — quantize to palette to avoid PIL merging "similar" frames
     if not pil_frames: raise ValueError("No frames to save.")
-    pil_frames[0].save(
-        out_path, save_all=True, append_images=pil_frames[1:],
-        duration=100, loop=0, optimize=False, disposal=2
+    palette_frames = [f.quantize(colors=256, method=Image.Quantize.MEDIANCUT) for f in pil_frames]
+    palette_frames[0].save(
+        out_path, save_all=True, append_images=palette_frames[1:],
+        duration=frame_duration_ms, loop=0, optimize=False, disposal=2
     )
     print(f"GIF saved to {out_path}")
     return out_path

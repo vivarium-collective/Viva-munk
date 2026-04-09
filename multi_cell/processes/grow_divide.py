@@ -2,40 +2,37 @@
 growth and division
 """
 import math, random
-from process_bigraph import Process, default
-from pymunk_process.processes.multibody import build_microbe, daughter_locations
+from process_bigraph import Process
+from multi_cell.processes.multibody import build_microbe, daughter_locations
 
-def get_grow_divide_schema(core, config=None):
-    config = config or core.default(GrowDivide.config_schema)
-    agents_key = config.get('agents_key', 'agents')
+def make_grow_divide_process(config=None, agents_key='cells', interval=10.0):
+    """Create a grow_divide process spec to embed in an agent's state."""
+    config = config or {}
+    config.setdefault('agents_key', agents_key)
     return {
-        agents_key: {
-            '_type': 'map',
-            '_value': {
-                'grow_divide': {
-                    '_type': 'process',
-                    'address': default('string', 'local:GrowDivide'),
-                    'config': default('quote', config),
-                    '_inputs': {
-                        'agent_id':'string',
-                        'agents': 'map[pymunk_agent]',
-                    },
-                    '_outputs':  {
-                        'agents': 'map[pymunk_agent]'
-                    },
-                    'inputs': default(
-                        'tree[wires]', {
-                            'agent_id': ['id'],
-                            'agents': ['..', '..', agents_key],
-                        }),
-                    'outputs': default(
-                        'tree[wires]', {
-                            'agents': ['..', '..', agents_key],
-                        })
-                }
-            }
+        '_type': 'process',
+        'address': 'local:GrowDivide',
+        'config': config,
+        'interval': interval,
+        'inputs': {
+            'agent_id': ['id'],
+            'agents': ['..', '..', agents_key],
+        },
+        'outputs': {
+            'agents': ['..', '..', agents_key],
         }
     }
+
+
+def add_grow_divide_to_agents(initial_state, agents_key='cells', config=None):
+    """Add grow_divide process to each agent in the initial state."""
+    agents = initial_state.get(agents_key, {})
+    for agent_id, agent in agents.items():
+        agent['grow_divide'] = make_grow_divide_process(
+            config=dict(config) if config else None,
+            agents_key=agents_key,
+        )
+    return initial_state
 
 class GrowDivide(Process):
     config_schema = {
@@ -153,33 +150,28 @@ class GrowDivide(Process):
         if t not in ('circle', 'segment'):
             t = 'segment' if ('length' in agent and float(agent.get('length', 0.0)) > 0.0) else 'circle'
 
-        update = {}
-
+        # Return deltas for accumulate fields (mass, radius, length).
+        # Must include 'type' because Enum has set semantics and would become None if omitted.
         if t == 'circle':
-            # keep density constant: m = ρ π r² => r ∝ sqrt(m)
             r = float(agent.get('radius', 0.0))
             if r > 0.0:
-                scale = (m_new / m) ** 0.5
-                r_new = r * scale
-                update = {agent_id: {'mass': dm, 'radius': (r_new - r)}}
+                r_new = r * (m_new / m) ** 0.5
+                update = {agent_id: {'type': t, 'mass': dm, 'radius': r_new - r}}
             else:
-                update = {agent_id: {'mass': dm}}
+                update = {agent_id: {'type': t, 'mass': dm}}
 
         else:  # segment
-            # capsule with fixed radius; m = ρ (2r) L => L ∝ m (if r fixed)
             L = float(agent.get('length', 0.0))
             r = float(agent.get('radius', 0.0))
             if L > 0.0 and r > 0.0:
-                scale = (m_new / m)
-                L_new = L * scale
-                update = {agent_id: {'mass': dm, 'length': L_new}}
+                L_new = L * (m_new / m)
+                update = {agent_id: {'type': t, 'mass': dm, 'length': L_new - L}}
             else:
-                update = {agent_id: {'mass': dm}}
+                update = {agent_id: {'type': t, 'mass': dm}}
 
         # --- Division ---
         if m_new >= float(thresh):
             half_mass = 0.5 * m_new
-            loc1, loc2 = daughter_locations(agent)
 
             inherit_keys = [
                 'elasticity', 'friction', 'angle', 'radius', 'length', 'velocity', 'type'
@@ -188,15 +180,16 @@ class GrowDivide(Process):
 
             vx, vy = agent.get('velocity', (0.0, 0.0))
             angle = float(agent.get('angle', 0.0))
-            eps_perp = 0.1  # circle: nudge perpendicular to "angle"
-            eps_axis = 0.1  # segment: nudge along axis
 
-            # compute daughter-specific geometry at constant density
             if t == 'circle':
                 r = float(agent.get('radius', 1.0)) or 1.0
                 r_d = r * (half_mass / m) ** 0.5
-                dvx = eps_perp * math.cos(angle + math.pi/2)
-                dvy = eps_perp * math.sin(angle + math.pi/2)
+                loc1, loc2 = daughter_locations(
+                    agent, gap=r_d * 0.1, daughter_radius=r_d)
+                # Small perpendicular nudge
+                eps = r_d * 0.01
+                dvx = eps * math.cos(angle + math.pi/2)
+                dvy = eps * math.sin(angle + math.pi/2)
 
                 d1 = dict(base, **{
                     'type': 'circle',
@@ -217,8 +210,12 @@ class GrowDivide(Process):
                 L = float(agent['length'])
                 r = float(agent['radius'])
                 L_d = L * (half_mass / m)
-                dvx = eps_axis * math.cos(angle)
-                dvy = eps_axis * math.sin(angle)
+                loc1, loc2 = daughter_locations(
+                    agent, gap=r * 0.1, daughter_length=L_d, daughter_radius=r)
+                # Tiny axial nudge
+                eps = r * 0.01
+                dvx = eps * math.cos(angle)
+                dvy = eps * math.sin(angle)
 
                 d1 = dict(base, **{
                     'type': 'segment',

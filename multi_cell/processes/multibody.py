@@ -71,13 +71,13 @@ class PymunkProcess(Process):
     config_schema = {
         'env_size': {'_type': 'float', '_default': 500},
         'substeps': {'_type': 'integer', '_default': 100},
-        'damping_per_second': {'_type': 'float', '_default': 0.98},
-        'gravity': {'_type': 'float', '_default': -9.81},
+        'damping_per_second': {'_type': 'float', '_default': 0.1},
+        'gravity': {'_type': 'float', '_default': 0.0},
         'friction': {'_type': 'float', '_default': 0.8},
         'elasticity': {'_type': 'float', '_default': 0.0},
-        'jitter_per_second': {'_type': 'float', '_default': 1e-2},  # (impulse std)
+        'jitter_per_second': {'_type': 'float', '_default': 1e-4},  # (impulse std)
         'barriers': 'list[map]',
-        'wall_thickness': {'_type': 'float', '_default': 100},
+        'wall_thickness': {'_type': 'float', '_default': 5},
     }
 
     def __init__(self, config=None, core=None):
@@ -198,34 +198,37 @@ class PymunkProcess(Process):
                 self.apply_jitter_force(body, dt)
             self.space.step(dt)
 
-        # ------- emit in one pass (no full_state build) -------
+        # ------- emit deltas (new - old) for all Float fields -------
+        all_inputs = {**agents_in, **particles_in}
         agents_out = {}
         particles_out = {}
 
         for _id, obj in self.agents.items():
-            # only report objects that were present on this tick's inputs
-            # (keeps behavior consistent if you treat absence as deletion)
-            if _id in agent_ids or _id in particle_ids:
-                if obj['type'] == 'circle':
-                    rec = {
-                        'type': obj['type'],
-                        'location': (obj['body'].position.x, obj['body'].position.y),
-                        'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
-                        'inertia': obj['body'].moment,
-                    }
-                else:  # 'segment'
-                    rec = {
-                        'type': obj['type'],
-                        'location': (obj['body'].position.x, obj['body'].position.y),
-                        'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
-                        'inertia': obj['body'].moment,
-                        'angle': obj['body'].angle,
-                    }
+            if _id not in all_inputs:
+                continue
+            old = all_inputs[_id]
+            old_loc = old.get('location', (0.0, 0.0))
+            old_vel = old.get('velocity', (0.0, 0.0))
+            old_angle = float(old.get('angle', 0.0) or 0.0)
+            old_inertia = float(old.get('inertia', 0.0) or 0.0)
 
-                if _id in agent_ids:
-                    agents_out[_id] = rec
-                elif _id in particle_ids:
-                    particles_out[_id] = rec
+            new_loc = (obj['body'].position.x, obj['body'].position.y)
+            new_vel = (obj['body'].velocity.x, obj['body'].velocity.y)
+            new_angle = obj['body'].angle if obj['type'] == 'segment' else 0.0
+            new_inertia = obj['body'].moment
+
+            rec = {
+                'type': obj['type'],  # Enum has set semantics — must always be returned
+                'location': (new_loc[0] - old_loc[0], new_loc[1] - old_loc[1]),
+                'velocity': (new_vel[0] - old_vel[0], new_vel[1] - old_vel[1]),
+                'angle': new_angle - old_angle,
+                'inertia': new_inertia - old_inertia,
+            }
+
+            if _id in agent_ids:
+                agents_out[_id] = rec
+            elif _id in particle_ids:
+                particles_out[_id] = rec
 
         return {'agents': agents_out, 'particles': particles_out}
 
@@ -264,8 +267,8 @@ class PymunkProcess(Process):
         old_shape = agent['shape']
         old_type = agent['type']
 
-        # robust defaults
-        shape_type = attrs.get('type', old_type or 'circle')
+        # robust defaults — type may be None if not in the latest update (Enum has set semantics)
+        shape_type = attrs.get('type') or old_type or 'circle'
         mass = float(attrs.get('mass', body.mass))
         vx, vy = attrs.get('velocity', (0.0, 0.0))
         body.mass = mass
@@ -285,11 +288,15 @@ class PymunkProcess(Process):
             length = float(attrs['length'])
             radius = float(attrs['radius'])
             angle = float(attrs['angle'])
-            # local endpoints
-            start = pymunk.Vec2d(-length / 2, 0).rotated(angle)
-            end = pymunk.Vec2d(length / 2, 0).rotated(angle)
-            if not isinstance(old_shape, pymunk.Segment) or abs(
-                    old_shape.radius - radius) > 1e-9 or old_type != 'segment':
+            # Local endpoints along the x-axis — body.angle handles world rotation
+            start = pymunk.Vec2d(-length / 2, 0)
+            end = pymunk.Vec2d(length / 2, 0)
+            # Rebuild whenever length, radius, or type changes
+            old_length = agent.get('length') or 0.0
+            if (not isinstance(old_shape, pymunk.Segment)
+                    or abs(old_shape.radius - radius) > 1e-9
+                    or abs(old_length - length) > 1e-9
+                    or old_type != 'segment'):
                 needs_rebuild = True
             if needs_rebuild:
                 new_shape = pymunk.Segment(body, start, end, radius)
@@ -325,7 +332,7 @@ class PymunkProcess(Process):
             agent['length'] = body.length
 
     def create_new_object(self, agent_id, attrs):
-        shape_type = attrs.get('type', 'circle')
+        shape_type = attrs.get('type') or 'circle'
         mass = float(attrs.get('mass', 1.0))
         vx, vy = attrs.get('velocity', (0.0, 0.0))
         pos = attrs.get('location', (0.0, 0.0))
@@ -379,19 +386,14 @@ class PymunkProcess(Process):
                     'type': obj['type'],
                     'location': (obj['body'].position.x, obj['body'].position.y),
                     'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
-                    # 'mass': obj['body'].mass,
                     'inertia': obj['body'].moment,
-                    # 'radius': obj['shape'].radius
                 }
             elif obj['type'] == 'segment':
                 state[agent_id] = {
                     'type': obj['type'],
                     'location': (obj['body'].position.x, obj['body'].position.y),
                     'velocity': (obj['body'].velocity.x, obj['body'].velocity.y),
-                    # 'mass': obj['body'].mass,
                     'inertia': obj['body'].moment,
-                    # 'length': obj['length'],
-                    # 'radius': obj['shape'].radius,
                     'angle': obj['body'].angle
                 }
         return state
