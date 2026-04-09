@@ -353,10 +353,13 @@ def run_experiment(name, output_dir='out'):
     plot_schema = {k: v for k, v in sim.schema.items() if k not in ['global_time', 'emitter']}
     viz_path = os.path.join(output_dir, f'{name}_viz')
     try:
-        # Only show one cell for readability
+        # Only show one cell and one particle for readability
         if 'cells' in plot_state and plot_state['cells']:
             first_key = next(iter(plot_state['cells']))
             plot_state['cells'] = {first_key: plot_state['cells'][first_key]}
+        if 'particles' in plot_state and plot_state['particles']:
+            first_key = next(iter(plot_state['particles']))
+            plot_state['particles'] = {first_key: plot_state['particles'][first_key]}
         plot_bigraph(
             state=plot_state, schema=plot_schema, core=core,
             out_dir=output_dir, filename=f'{name}_viz', dpi='200',
