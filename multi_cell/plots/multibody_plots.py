@@ -103,7 +103,7 @@ def build_phylogeny_colors(frames, agents_key='agents', seed=None, base_s=0.70, 
 class GifRenderer:
     def __init__(
         self, env_size, barriers, figure_size_inches, dpi, show_time_title,
-        world_pad, max_line_px, xlim=None, ylim=None,
+        world_pad, max_line_px, xlim=None, ylim=None, flow_regions=None,
     ):
         self.env_size = float(env_size)
         self.show_time_title = show_time_title
@@ -140,7 +140,9 @@ class GifRenderer:
         self.pad_px = int(round(world_pad * self.ypu))
         self.title_obj = self.ax.set_title("") if show_time_title else None
 
-        # draw barriers once
+        # draw flow regions and barriers once
+        if flow_regions:
+            self._draw_flow_regions(flow_regions, x0, x1, y0, y1)
         self._draw_barriers(barriers)
 
         # pools (grow-on-demand)
@@ -152,6 +154,24 @@ class GifRenderer:
         self.background = self.canvas.copy_from_bbox(self.ax.bbox)
 
     def close(self): plt.close(self.fig)
+
+    def _draw_flow_regions(self, flow_regions, x0, x1, y0, y1):
+        """Draw translucent grey rectangles for flow/removal regions.
+
+        Each entry can specify any of: x_min, x_max, y_min, y_max.
+        Missing bounds extend to the viewport edges.
+        """
+        from matplotlib.patches import Rectangle
+        for region in flow_regions:
+            rx0 = region.get('x_min', x0)
+            rx1 = region.get('x_max', x1)
+            ry0 = region.get('y_min', y0)
+            ry1 = region.get('y_max', y1)
+            rect = Rectangle(
+                (rx0, ry0), rx1 - rx0, ry1 - ry0,
+                facecolor='gray', alpha=0.2, edgecolor='none', zorder=-1,
+            )
+            self.ax.add_patch(rect)
 
     def _draw_barriers(self, barriers, color='gray'):
         dpi_fig = self.fig.dpi
@@ -266,6 +286,7 @@ def simulation_to_gif(
     max_radius_px=40,     # kept for API-compat; used in culling path if needed
     xlim=None,            # (x0, x1) viewport override
     ylim=None,            # (y0, y1) viewport override
+    flow_regions=None,    # list of dicts with optional x_min/x_max/y_min/y_max
     # coloring:
     color_by_phylogeny=False,   # << default to uniform color
     color_seed=None,
@@ -316,7 +337,7 @@ def simulation_to_gif(
             return uniform_color if uniform_color is not None else default_rgb
 
     # render
-    renderer = GifRenderer(env_size, barriers, figure_size_inches, dpi, show_time_title, world_pad, max_line_px, xlim=xlim, ylim=ylim)
+    renderer = GifRenderer(env_size, barriers, figure_size_inches, dpi, show_time_title, world_pad, max_line_px, xlim=xlim, ylim=ylim, flow_regions=flow_regions)
     try:
         pil_frames = [renderer.draw_frame(step, agents_key, _color, max_radius_px) for step in frames]
     finally:

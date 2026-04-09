@@ -28,8 +28,12 @@ PYMUNK_CORE = core_import()
 # Experiment document generators
 # ---------------------------------------------------------------------
 
-def single_cell_growth_document(config=None):
-    """A single cell growing in an empty environment. E. coli proportions by default."""
+def daughter_machine_document(config=None):
+    """A single cell growing in an environment with an absorbing right wall.
+
+    Cells that drift past the right boundary are removed by RemoveCrossing,
+    so the colony tends to grow leftward as daughters are pushed out.
+    """
     config = config or {}
     env_size = config.get('env_size', 30)
     interval = config.get('interval', 30.0)
@@ -37,6 +41,7 @@ def single_cell_growth_document(config=None):
     cell_radius = config.get('cell_radius', 0.5)
     cell_length = config.get('cell_length', 2.0)
     density = config.get('density', 0.02)
+    flow_x = config.get('flow_x', env_size * 0.85)  # remove past 85% of width
     division_threshold = config.get('division_threshold', None)
     if division_threshold is None:
         division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
@@ -82,6 +87,10 @@ def single_cell_growth_document(config=None):
                 'particles': ['particles'],
             },
         },
+        'remove_crossing': make_remove_crossing_process(
+            x_max=flow_x,
+            agents_key='cells',
+        ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],
             'particles': ['particles'],
@@ -298,19 +307,19 @@ def biofilm_document(config=None):
 # ---------------------------------------------------------------------
 
 EXPERIMENT_REGISTRY = {
-    'single_cell_growth': {
-        'document': single_cell_growth_document,
-        'time': 14400.0,  # 4 hours = ~6 generations
+    'daughter_machine': {
+        'document': daughter_machine_document,
+        'time': 28800.0,  # 8 hours = ~12 generations
         'config': {
-            'env_size': 30,
+            'env_size': 40,
         },
-        'description': 'A single E. coli-scale microbe grows with ~40 min doubling time and divides when its length doubles. Daughters inherit mutated growth parameters, colored by phylogeny.',
+        'description': 'A single E. coli-scale microbe grows and divides in an open chamber with an absorbing right wall. Daughters drift toward the right boundary and are removed when they cross it, keeping the population growing without bound.',
     },
     'mother_machine': {
         'document': mother_machine_document,
         'time': 14400.0,  # 4 hours ~ 6 generations
         'config': {
-            'n_channels': 20,
+            'n_channels': 32,
             'channel_height': 25.0,
             'flow_channel_y': 22.0,
         },
@@ -322,7 +331,7 @@ EXPERIMENT_REGISTRY = {
         'config': {
             'env_size': 60,
             'n_cells': 5,
-            'n_initial_particles': 200,
+            'n_initial_particles': 300,
             'secretion_rate': 0.01,
         },
         'description': 'Multiple E. coli-scale cells grow and divide in an environment seeded with particles of varying sizes. Cells also secrete small EPS particles that accumulate around the colony.',
@@ -414,6 +423,25 @@ def run_experiment(name, output_dir='out'):
     if ylim is None and 'channel_height' in config:
         ylim = (-0.5, config['channel_height'] + 2.0)
 
+    # Auto-derive flow regions from any remove_crossing step in the document
+    flow_regions = []
+    for key, val in document.items():
+        if isinstance(val, dict) and val.get('address') == 'local:RemoveCrossing':
+            rc_cfg = val.get('config', {})
+            region = {}
+            if rc_cfg.get('x_max') is not None:
+                region['x_min'] = rc_cfg['x_max']
+            if rc_cfg.get('x_min') is not None:
+                region['x_max'] = rc_cfg['x_min']
+            if rc_cfg.get('y_max') is not None:
+                region['y_min'] = rc_cfg['y_max']
+            if rc_cfg.get('y_min') is not None:
+                region['y_max'] = rc_cfg['y_min']
+            if rc_cfg.get('crossing_y') is not None and 'y_min' not in region:
+                region['y_min'] = rc_cfg['crossing_y']
+            if region:
+                flow_regions.append(region)
+
     gif_path = simulation_to_gif(
         results,
         filename=name,
@@ -427,6 +455,7 @@ def run_experiment(name, output_dir='out'):
         dpi=150,
         xlim=xlim,
         ylim=ylim,
+        flow_regions=flow_regions or None,
     )
     print(f'GIF: {gif_path}')
 
