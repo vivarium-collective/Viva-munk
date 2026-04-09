@@ -192,10 +192,16 @@ class PymunkProcess(Process):
         dt = float(interval) / n_steps
         d_step = self.damping_per_second ** max(dt, 0.0)
 
+        # Compute jitter sigma once (constant per substep)
+        sigma = self.jitter_per_second * math.sqrt(max(dt, 1e-12))
+        # Skip jitter entirely if sigma is below numerical noise floor
+        apply_jitter = sigma > 1e-12
+
         for _ in range(n_steps):
             self.space.damping = d_step
-            for body in self.space.bodies:
-                self.apply_jitter_force(body, dt)
+            if apply_jitter:
+                for body in self.space.bodies:
+                    self.apply_jitter_force(body, dt, sigma)
             self.space.step(dt)
 
         # ------- emit deltas (new - old) for all Float fields -------
@@ -232,15 +238,11 @@ class PymunkProcess(Process):
 
         return {'agents': agents_out, 'particles': particles_out}
 
-    def apply_jitter_force(self, body, dt):
-        shape = next(iter(body.shapes)) if body.shapes else None
-        local_point = local_impulse_point_for_shape(shape) if shape else (0.0, 0.0)
-
-        # Scale per-second noise to the step: σ_step ≈ σ_sec * sqrt(dt)
-        sigma = self.jitter_per_second * math.sqrt(max(dt, 1e-12))
-        fx = random.normalvariate(0.0, sigma)
-        fy = random.normalvariate(0.0, sigma)
-        body.apply_impulse_at_local_point((fx, fy), local_point)
+    def apply_jitter_force(self, body, dt, sigma):
+        # Apply jitter at body center (skip per-shape lookup for speed)
+        fx = random.gauss(0.0, sigma)
+        fy = random.gauss(0.0, sigma)
+        body.apply_impulse_at_local_point((fx, fy), (0.0, 0.0))
 
     def update_bodies(self, agents):
         existing_ids = set(self.agents.keys())
