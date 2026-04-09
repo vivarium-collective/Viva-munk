@@ -2,21 +2,13 @@
 
 Multi-cell simulations with 2D physics, built on [process-bigraph](https://github.com/vivarium-collective/process-bigraph) and [pymunk](https://www.pymunk.org/).
 
+### **[Demos](https://vivarium-collective.github.io/Viva-munk/)**
+
 ## Goal
 
 Provide a composable framework for simulating populations of growing, dividing cells with realistic 2D physics. Cells are modeled as capsule-shaped rigid bodies (pymunk segments) that grow, divide, secrete particles, and interact physically through collisions and confinement. The framework uses the bigraph process architecture, making it easy to compose new cell behaviors, environmental structures, and analysis pipelines.
 
 Default parameters are calibrated to *E. coli* proportions (~1 um wide, ~2 um at birth, ~4 um at division, ~40 min doubling time).
-
-## Experiments Report
-
-**[View the experiments report](https://vivarium-collective.github.io/Viva-munk/)** ([source](doc/index.html))
-
-| Experiment | Description |
-|------------|-------------|
-| **Single Cell Growth** | One cell grows and divides into a colony over 4 hours |
-| **Mother Machine** | Cells in narrow dead-end channels with a flow channel that removes expelled cells |
-| **Biofilm** | Cells grow, divide, and secrete EPS particles that accumulate into a matrix |
 
 ## Quick Start
 
