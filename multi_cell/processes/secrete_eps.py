@@ -22,6 +22,8 @@ class SecreteEPS(Process):
         'eps_mass': {'_type': 'float', '_default': 0.01},
         'eps_elasticity': {'_type': 'float', '_default': 0.0},
         'eps_friction': {'_type': 'float', '_default': 0.5},
+        # If True, only attached cells secrete EPS
+        'requires_attached': {'_type': 'boolean', '_default': False},
     }
 
     def inputs(self):
@@ -40,6 +42,11 @@ class SecreteEPS(Process):
         agent = state['agents'].get(agent_id, {})
         if not agent:
             return {'particles': {}}
+
+        # Gate secretion on attachment if configured
+        if self.config.get('requires_attached', False):
+            if float(agent.get('attached', 0.0) or 0.0) < 0.5:
+                return {'particles': {}}
 
         mass = float(agent.get('mass', 0.0) or 0.0)
         if mass <= 0:

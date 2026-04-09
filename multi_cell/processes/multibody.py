@@ -80,6 +80,11 @@ class PymunkProcess(Process):
         'n_bending_segments': {'_type': 'integer', '_default': 4},   # sub-segments per bending cell
         'bending_stiffness':  {'_type': 'float',   '_default': 100.0},  # rotary spring stiffness
         'bending_damping':    {'_type': 'float',   '_default': 5.0},   # rotary spring damping
+        # Surface adhesion options
+        'adhesion_enabled':    {'_type': 'boolean', '_default': False},
+        'adhesion_surface':    {'_type': 'string',  '_default': 'bottom'},  # bottom/top/left/right
+        'adhesion_threshold':  {'_type': 'float',   '_default': 0.5},  # min adhesins to attach
+        'adhesion_distance':   {'_type': 'float',   '_default': 0.5},  # max distance to surface to attach
         'barriers': 'list[map]',
         'wall_thickness': {'_type': 'float', '_default': 5},
     }
@@ -205,12 +210,28 @@ class PymunkProcess(Process):
         # Skip jitter entirely if sigma is below numerical noise floor
         apply_jitter = sigma > 1e-12
 
+        adhesion_enabled = bool(self.config.get('adhesion_enabled', False))
+        # Particles get a fraction of the cell jitter (so they drift but don't jitter wildly)
+        particle_jitter_fraction = float(self.config.get('particle_jitter_fraction', 0.2))
+        sigma_particle = sigma * particle_jitter_fraction
+        particle_body_ids = set()
+        if apply_jitter:
+            for obj in self.agents.values():
+                if obj.get('type') == 'circle':
+                    particle_body_ids.add(id(obj['body']))
         for _ in range(n_steps):
             self.space.damping = d_step
             if apply_jitter:
                 for body in self.space.bodies:
-                    self.apply_jitter_force(body, dt, sigma)
+                    if id(body) in particle_body_ids:
+                        if sigma_particle > 1e-12:
+                            self.apply_jitter_force(body, dt, sigma_particle)
+                    else:
+                        self.apply_jitter_force(body, dt, sigma)
             self.space.step(dt)
+        # Run adhesion once per process tick (not per substep) — cheap and sufficient
+        if adhesion_enabled:
+            self._apply_adhesion()
 
         # ------- emit deltas per port -------
         all_inputs = {}
@@ -242,6 +263,8 @@ class PymunkProcess(Process):
             }
 
             if _id in segment_ids:
+                # Expose the attached state so other processes (e.g. GrowDivide) can read it
+                rec['attached'] = 1.0 if obj.get('attached') else 0.0
                 segment_out[_id] = rec
             elif _id in bending_ids:
                 # Include the actual bent spine for visualization
@@ -303,6 +326,14 @@ class PymunkProcess(Process):
 
     def _remove_object(self, agent_id):
         obj = self.agents[agent_id]
+        # Remove adhesion joints if present
+        for key in ('attachment_joint', 'cluster_joint'):
+            joint = obj.get(key)
+            if joint is not None:
+                try:
+                    self.space.remove(joint)
+                except Exception:
+                    pass
         if obj.get('kind') == 'bending':
             for joint in obj.get('joints', []):
                 self.space.remove(joint)
@@ -319,6 +350,104 @@ class PymunkProcess(Process):
         fx = random.gauss(0.0, sigma)
         fy = random.gauss(0.0, sigma)
         body.apply_impulse_at_local_point((fx, fy), (0.0, 0.0))
+
+    def _apply_adhesion(self):
+        """Pin eligible bodies to the adhesion surface or to other attached bodies.
+
+        Cells (segments) attach when they touch the surface and have enough adhesins.
+        Particles (circles) attach when they touch the surface OR another already-attached body.
+        Once attached, a PivotJoint anchors the body at its current position.
+        """
+        surface = self.config.get('adhesion_surface', 'bottom')
+        threshold = float(self.config.get('adhesion_threshold', 0.5))
+        max_dist = float(self.config.get('adhesion_distance', 0.5))
+        env_size = float(self.config['env_size'])
+
+        def _surface_distance(x, y, r_along_normal):
+            """Distance from outermost edge to the configured surface (positive = away)."""
+            if surface == 'bottom':
+                return y - r_along_normal
+            elif surface == 'top':
+                return (env_size - y) - r_along_normal
+            elif surface == 'left':
+                return x - r_along_normal
+            elif surface == 'right':
+                return (env_size - x) - r_along_normal
+            return float('inf')
+
+        # First pass: cells touching the surface (with adhesins) get attached
+        for agent in self.agents.values():
+            if agent.get('attached'):
+                continue
+            if agent.get('kind') != 'rigid' or agent.get('type') != 'segment':
+                continue
+            if agent.get('adhesins', 0.0) < threshold:
+                continue
+            body = agent['body']
+            r = agent['radius']
+            L = agent.get('length') or 0.0
+            cx, cy = body.position.x, body.position.y
+            ang = body.angle
+            half = L / 2.0
+            ex = half * math.cos(ang)
+            ey = half * math.sin(ang)
+            # Distance from outermost capsule edge to the surface
+            if surface in ('bottom', 'top'):
+                outer = min(cy - ey, cy + ey) if surface == 'bottom' else max(cy - ey, cy + ey)
+                d = _surface_distance(cx, outer, r)
+            else:
+                outer = min(cx - ex, cx + ex) if surface == 'left' else max(cx - ex, cx + ex)
+                d = _surface_distance(outer, cy, r)
+            if d > max_dist:
+                continue
+            joint = pymunk.PivotJoint(
+                self.space.static_body, body, body.position, (0, 0))
+            self.space.add(joint)
+            agent['attached'] = True
+            agent['attachment_joint'] = joint
+
+        # Second pass: circle particles
+        circle_agents = [a for a in self.agents.values()
+                         if a.get('kind') == 'rigid' and a.get('type') == 'circle']
+        for agent in circle_agents:
+            if agent.get('attached'):
+                continue
+            body = agent['body']
+            r = agent['radius']
+            cx, cy = body.position.x, body.position.y
+
+            # 1) Direct contact with the wall — pin to static body
+            d = _surface_distance(cx, cy, r)
+            if d <= max_dist:
+                joint = pymunk.PivotJoint(
+                    self.space.static_body, body, body.position, (0, 0))
+                self.space.add(joint)
+                agent['attached'] = True
+                agent['attachment_joint'] = joint
+                continue
+
+            # 2) Contact with another circle — link them so they move as a unit.
+            #    Each particle keeps at most one cluster joint to avoid over-constraint.
+            if agent.get('cluster_joint'):
+                continue
+            for other in circle_agents:
+                if other is agent:
+                    continue
+                ob = other['body']
+                ox, oy = ob.position.x, ob.position.y
+                or_ = other['radius']
+                contact = r + or_ + max_dist
+                dx, dy = cx - ox, cy - oy
+                if dx * dx + dy * dy <= contact * contact:
+                    # Anchor at the midpoint between the two particles, in each body's local frame
+                    mx = (cx + ox) / 2.0
+                    my = (cy + oy) / 2.0
+                    local_a = (mx - cx, my - cy)
+                    local_b = (mx - ox, my - oy)
+                    joint = pymunk.PivotJoint(body, ob, local_a, local_b)
+                    self.space.add(joint)
+                    agent['cluster_joint'] = joint
+                    break
 
     def update_bodies(self, agents):
         existing_ids = set(self.agents.keys())
@@ -418,6 +547,9 @@ class PymunkProcess(Process):
             agent['radius'] = radius
             agent['angle'] = body.angle
             agent['length'] = body.length
+        # Track adhesin count if provided (used by adhesion logic)
+        if 'adhesins' in attrs and attrs['adhesins'] is not None:
+            agent['adhesins'] = float(attrs['adhesins'])
 
     def create_new_object(self, agent_id, attrs, kind='rigid'):
         if kind == 'bending':
@@ -468,6 +600,9 @@ class PymunkProcess(Process):
             'radius': radius,
             'angle': angle,
             'length': length,
+            'adhesins': float(attrs.get('adhesins', 0.0) or 0.0),
+            'attached': False,
+            'attachment_joint': None,
         }
 
     # ------------------------------------------------------------------
@@ -695,6 +830,7 @@ def build_microbe(
     # geometry / mass (capsule segment)
     length=None, radius=None, mass=None, density=0.02,
     length_range=(40.0, 120.0), radius_range=(6.0, 24.0),
+    adhesins=1.0,
 ):
     if length is None and mass is None:
         length = rng.uniform(*length_range)
@@ -733,6 +869,7 @@ def build_microbe(
         'location': (float(x), float(y)),
         'velocity': (float(vx), float(vy)),
         'elasticity': float(elasticity),
+        'adhesins': float(adhesins),
     }
 
 # -------------------------

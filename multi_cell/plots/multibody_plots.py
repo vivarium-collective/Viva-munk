@@ -104,6 +104,7 @@ class GifRenderer:
     def __init__(
         self, env_size, barriers, figure_size_inches, dpi, show_time_title,
         world_pad, max_line_px, xlim=None, ylim=None, flow_regions=None,
+        draw_walls=True, adhesion_surface=None,
     ):
         self.env_size = float(env_size)
         self.show_time_title = show_time_title
@@ -140,9 +141,13 @@ class GifRenderer:
         self.pad_px = int(round(world_pad * self.ypu))
         self.title_obj = self.ax.set_title("") if show_time_title else None
 
-        # draw flow regions and barriers once
+        # draw flow regions, walls, adhesion surface, and barriers once
         if flow_regions:
             self._draw_flow_regions(flow_regions, x0, x1, y0, y1)
+        if draw_walls:
+            self._draw_walls()
+        if adhesion_surface:
+            self._draw_adhesion_surface(adhesion_surface)
         self._draw_barriers(barriers)
 
         # pools (grow-on-demand)
@@ -172,6 +177,32 @@ class GifRenderer:
                 facecolor='gray', alpha=0.2, edgecolor='none', zorder=-1,
             )
             self.ax.add_patch(rect)
+
+    def _draw_walls(self):
+        """Draw the four chamber walls as a thin gray rectangle outline."""
+        from matplotlib.patches import Rectangle
+        rect = Rectangle(
+            (0, 0), self.env_size, self.env_size,
+            facecolor='none', edgecolor='#888', linewidth=1.2,
+        )
+        self.ax.add_patch(rect)
+
+    def _draw_adhesion_surface(self, surface):
+        """Highlight the adhesion surface with a colored line."""
+        from matplotlib.lines import Line2D
+        s = self.env_size
+        color = '#d97b00'  # warm orange
+        if surface == 'bottom':
+            line = Line2D([0, s], [0, 0], linewidth=3.0, color=color, solid_capstyle='butt')
+        elif surface == 'top':
+            line = Line2D([0, s], [s, s], linewidth=3.0, color=color, solid_capstyle='butt')
+        elif surface == 'left':
+            line = Line2D([0, 0], [0, s], linewidth=3.0, color=color, solid_capstyle='butt')
+        elif surface == 'right':
+            line = Line2D([s, s], [0, s], linewidth=3.0, color=color, solid_capstyle='butt')
+        else:
+            return
+        self.ax.add_line(line)
 
     def _draw_barriers(self, barriers, color='gray'):
         dpi_fig = self.fig.dpi
@@ -303,6 +334,8 @@ def simulation_to_gif(
     xlim=None,            # (x0, x1) viewport override
     ylim=None,            # (y0, y1) viewport override
     flow_regions=None,    # list of dicts with optional x_min/x_max/y_min/y_max
+    draw_walls=True,      # draw the chamber wall outline
+    adhesion_surface=None,  # 'bottom'/'top'/'left'/'right' to highlight adhesive wall
     # coloring:
     color_by_phylogeny=False,   # << default to uniform color
     color_seed=None,
@@ -353,7 +386,12 @@ def simulation_to_gif(
             return uniform_color if uniform_color is not None else default_rgb
 
     # render
-    renderer = GifRenderer(env_size, barriers, figure_size_inches, dpi, show_time_title, world_pad, max_line_px, xlim=xlim, ylim=ylim, flow_regions=flow_regions)
+    renderer = GifRenderer(
+        env_size, barriers, figure_size_inches, dpi, show_time_title,
+        world_pad, max_line_px, xlim=xlim, ylim=ylim,
+        flow_regions=flow_regions, draw_walls=draw_walls,
+        adhesion_surface=adhesion_surface,
+    )
     try:
         pil_frames = [renderer.draw_frame(step, agents_key, _color, max_radius_px) for step in frames]
     finally:

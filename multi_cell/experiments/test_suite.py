@@ -6,6 +6,7 @@ Usage:
 """
 import argparse
 import json
+import math
 import os
 import socket
 import subprocess
@@ -94,6 +95,114 @@ def daughter_machine_document(config=None):
             x_max=flow_x,
             agents_key='cells',
         ),
+        'emitter': emitter_from_wires({
+            'agents': ['cells'],
+            'particles': ['particles'],
+            'time': ['global_time'],
+        }),
+    }
+    return document
+
+
+def attachment_document(config=None):
+    """Cells growing in an environment with an adhesive bottom surface.
+
+    Each cell starts with a default adhesin count. When a cell touches the
+    adhesive surface and has adhesins above the threshold, it pins in place
+    via a PivotJoint to the static world body. Daughters split adhesins
+    evenly, so the colony eventually saturates and produces unattached cells.
+    """
+    config = config or {}
+    env_size = config.get('env_size', 30)
+    interval = config.get('interval', 30.0)
+    growth_rate = config.get('growth_rate', 0.000289)
+    cell_radius = config.get('cell_radius', 0.5)
+    cell_length = config.get('cell_length', 2.0)
+    density = config.get('density', 0.02)
+    n_cells = config.get('n_cells', 4)
+    initial_adhesins = config.get('initial_adhesins', 8.0)
+    adhesion_threshold = config.get('adhesion_threshold', 0.5)
+    division_threshold = config.get('division_threshold', None)
+    if division_threshold is None:
+        division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
+
+    # Place initial cells in a small cluster near the middle of the x-axis,
+    # 25% above the floor.
+    rng = make_rng(7)
+    cells = {}
+    cy_low = env_size * 0.20
+    cx_mid = env_size / 2.0
+    cluster_width = max(2.0, n_cells * cell_radius * 4)
+    for i in range(n_cells):
+        # Spread cells around the x-midpoint within cluster_width
+        cx = cx_mid + (i - (n_cells - 1) / 2.0) * (cluster_width / n_cells) + rng.uniform(-0.3, 0.3)
+        cy = cy_low + rng.uniform(-0.5, 1.0)
+        aid, cell = build_microbe(
+            rng, env_size,
+            agent_id=f'cell_{i}',
+            x=cx, y=cy,
+            angle=rng.uniform(0, math.pi),
+            length=cell_length,
+            radius=cell_radius,
+            density=density,
+            velocity=(0, 0),
+            speed_range=(0, 0),
+            adhesins=initial_adhesins,
+        )
+        cells[aid] = cell
+
+    initial_state = {'cells': cells, 'particles': {}}
+
+    add_grow_divide_to_agents(
+        initial_state,
+        agents_key='cells',
+        config={
+            'agents_key': 'cells',
+            'rate': growth_rate,
+            'threshold': division_threshold,
+            'mutate': True,
+        },
+    )
+
+    # Attached cells secrete EPS particles
+    add_secrete_eps_to_agents(
+        initial_state,
+        agents_key='cells',
+        particles_key='particles',
+        config={
+            'secretion_rate': config.get('secretion_rate', 0.02),
+            'eps_radius': config.get('eps_radius', 0.15),
+            'requires_attached': True,
+        },
+        interval=interval,
+    )
+
+    document = {
+        'cells': initial_state['cells'],
+        'particles': initial_state['particles'],
+        'multibody': {
+            '_type': 'process',
+            'address': 'local:PymunkProcess',
+            'config': {
+                'env_size': env_size,
+                'gravity': 0.0,  # no gravity — only adhesion holds cells down
+                'elasticity': 0.0,
+                'jitter_per_second': 0.0008,  # gentle diffusive drift
+                'adhesion_enabled': True,
+                'adhesion_surface': 'bottom',
+                'adhesion_threshold': adhesion_threshold,
+                'adhesion_distance': cell_radius,
+            },
+            'interval': interval,
+            'inputs': {
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
+            },
+            'outputs': {
+                'segment_cells': ['cells'],
+                'circle_particles': ['particles'],
+            },
+        },
         'emitter': emitter_from_wires({
             'agents': ['cells'],
             'particles': ['particles'],
@@ -310,7 +419,7 @@ def mother_machine_document(config=None):
 
 
 def biofilm_document(config=None):
-    """Cells growing and secreting EPS particles that accumulate into a biofilm."""
+    """Cells growing in an environment seeded with passive particles of varying sizes."""
     config = config or {}
     env_size = config.get('env_size', 30)
     interval = config.get('interval', 30.0)
@@ -323,7 +432,6 @@ def biofilm_document(config=None):
     if division_threshold is None:
         division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
 
-    secretion_rate = config.get('secretion_rate', 0.005)
     eps_radius = config.get('eps_radius', 0.15)
     n_initial_particles = config.get('n_initial_particles', 0)
 
@@ -346,17 +454,6 @@ def biofilm_document(config=None):
             'threshold': division_threshold,
             'mutate': True,
         },
-    )
-
-    add_secrete_eps_to_agents(
-        initial_state,
-        agents_key='cells',
-        particles_key='particles',
-        config={
-            'secretion_rate': secretion_rate,
-            'eps_radius': eps_radius,
-        },
-        interval=interval,
     )
 
     document = {
@@ -419,9 +516,8 @@ EXPERIMENT_REGISTRY = {
             'env_size': 60,
             'n_cells': 5,
             'n_initial_particles': 300,
-            'secretion_rate': 0.01,
         },
-        'description': 'Multiple E. coli-scale cells grow and divide in an environment seeded with particles of varying sizes. Cells also secrete small EPS particles that accumulate around the colony.',
+        'description': 'Multiple E. coli-scale cells grow and divide in an environment seeded with passive particles of varying sizes. The cells push and rearrange the particles as they grow.',
     },
     'bending_cells': {
         'document': bending_cells_document,
@@ -435,12 +531,46 @@ EXPERIMENT_REGISTRY = {
         },
         'description': 'Cells modeled as multi-segment compound bodies that can bend under pressure. Each cell is built from 4 rigid sub-segments linked by pivot joints and damped rotary springs, so the colony deforms more naturally as cells push against each other.',
     },
+    'attachment': {
+        'document': attachment_document,
+        'time': 14400.0,  # 4 hours
+        'config': {
+            'env_size': 50,
+            'n_cells': 4,
+            'initial_adhesins': 8.0,
+            'adhesion_threshold': 0.5,
+        },
+        'description': 'Cells start with adhesin molecules that let them attach to the bottom surface. When a cell touches the surface and carries enough adhesins, a PivotJoint pins it in place. Adhesins split between daughters at division, so descendants of an attached lineage gradually exhaust the pool and the youngest cells eventually fail to attach.',
+    },
 }
 
 
 # ---------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------
+
+def _splice_process_configs(serialized, state):
+    """Walk the serialized state and graft process config dicts from the live sim state.
+
+    `core.serialize` returns an empty dict for fields typed as opaque Node
+    (like a process's `config`), even when the live state holds the populated
+    dict. This walker copies the actual config values across so the JSON
+    viewer shows useful content.
+    """
+    if not isinstance(serialized, dict) or not isinstance(state, dict):
+        return
+    # If this looks like a process spec, copy its config from the live state
+    if 'address' in serialized and 'config' in serialized:
+        live_cfg = state.get('config') if isinstance(state, dict) else None
+        if isinstance(live_cfg, dict) and live_cfg:
+            serialized['config'] = dict(live_cfg)
+    # Recurse into children that exist in both
+    for key, sub in serialized.items():
+        if isinstance(sub, dict):
+            sub_state = state.get(key) if isinstance(state, dict) else None
+            if isinstance(sub_state, dict):
+                _splice_process_configs(sub, sub_state)
+
 
 def run_experiment(name, output_dir='out'):
     entry = EXPERIMENT_REGISTRY[name]
@@ -482,6 +612,10 @@ def run_experiment(name, output_dir='out'):
     state_json_path = os.path.join(output_dir, f'{name}_state.json')
     try:
         serialized = core.serialize(sim.schema, sim.state)
+        # core.serialize doesn't walk opaque Node-typed config blobs.
+        # Splice the actual process config dicts from sim.state so the JSON
+        # viewer shows them.
+        _splice_process_configs(serialized, sim.state)
         # Replace inf/nan with JSON-safe values
         serialized = json.loads(json.dumps(serialized, default=lambda x: None if x != x else str(x)).replace('Infinity', 'null').replace('-Infinity', 'null').replace('NaN', 'null'))
         with open(state_json_path, 'w') as f:
@@ -541,6 +675,11 @@ def run_experiment(name, output_dir='out'):
             if region:
                 flow_regions.append(region)
 
+    # Highlight the adhesion surface if PymunkProcess has adhesion enabled
+    adhesion_surface = None
+    if multibody_cfg.get('adhesion_enabled'):
+        adhesion_surface = multibody_cfg.get('adhesion_surface', 'bottom')
+
     gif_path = simulation_to_gif(
         results,
         filename=name,
@@ -555,6 +694,7 @@ def run_experiment(name, output_dir='out'):
         xlim=xlim,
         ylim=ylim,
         flow_regions=flow_regions or None,
+        adhesion_surface=adhesion_surface,
     )
     print(f'GIF: {gif_path}')
 

@@ -177,6 +177,8 @@ class GrowDivide(Process):
                 'elasticity', 'friction', 'angle', 'radius', 'length', 'velocity', 'type'
             ]
             base = {k: agent[k] for k in inherit_keys if k in agent}
+            # Split adhesins evenly between daughters (each gets half of mother's count)
+            half_adhesins = float(agent.get('adhesins', 0.0) or 0.0) / 2.0
 
             vx, vy = agent.get('velocity', (0.0, 0.0))
             angle = float(agent.get('angle', 0.0))
@@ -197,6 +199,7 @@ class GrowDivide(Process):
                     'radius': r_d,
                     'location': (float(loc1[0]), float(loc1[1])),
                     'velocity': (float(vx + dvx), float(vy + dvy)),
+                    'adhesins': half_adhesins,
                 })
                 d2 = dict(base, **{
                     'type': 'circle',
@@ -204,14 +207,34 @@ class GrowDivide(Process):
                     'radius': r_d,
                     'location': (float(loc2[0]), float(loc2[1])),
                     'velocity': (float(vx - dvx), float(vy - dvy)),
+                    'adhesins': half_adhesins,
                 })
 
             else:  # segment
                 L = float(agent['length'])
                 r = float(agent['radius'])
                 L_d = L * (half_mass / m)
-                loc1, loc2 = daughter_locations(
-                    agent, gap=r * 0.1, daughter_length=L_d, daughter_radius=r)
+
+                # Asymmetric division when the mother is attached:
+                # one daughter stays at the mother's spot (will re-attach next tick),
+                # the other is displaced perpendicular to the cell axis (escapes the surface).
+                is_attached = float(agent.get('attached', 0.0) or 0.0) >= 0.5
+                mx, my = agent.get('location', (0.0, 0.0))
+                if is_attached:
+                    # d1 stays at mother's location
+                    loc1 = (float(mx), float(my))
+                    # d2 perpendicular to cell axis, distance ~ daughter length + radius
+                    perp_x = -math.sin(angle)
+                    perp_y = math.cos(angle)
+                    # Push d2 in the +y-favoring perpendicular direction so it
+                    # leaves the bottom surface even when the cell is horizontal
+                    if perp_y < 0:
+                        perp_x, perp_y = -perp_x, -perp_y
+                    push = L_d + 2 * r + 0.2
+                    loc2 = (float(mx + perp_x * push), float(my + perp_y * push))
+                else:
+                    loc1, loc2 = daughter_locations(
+                        agent, gap=r * 0.1, daughter_length=L_d, daughter_radius=r)
                 # Tiny axial nudge
                 eps = r * 0.01
                 dvx = eps * math.cos(angle)
@@ -225,6 +248,7 @@ class GrowDivide(Process):
                     'angle': angle,
                     'location': (float(loc1[0]), float(loc1[1])),
                     'velocity': (float(vx + dvx), float(vy + dvy)),
+                    'adhesins': half_adhesins,
                 })
                 d2 = dict(base, **{
                     'type': 'segment',
@@ -234,6 +258,7 @@ class GrowDivide(Process):
                     'angle': angle,
                     'location': (float(loc2[0]), float(loc2[1])),
                     'velocity': (float(vx - dvx), float(vy - dvy)),
+                    'adhesins': half_adhesins,
                 })
 
             # Per-daughter grow_divide configs (mutated)

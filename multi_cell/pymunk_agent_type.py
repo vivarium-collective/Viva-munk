@@ -23,6 +23,7 @@ from bigraph_schema.schema import Node
 _FLOAT_FIELDS = (
     'mass', 'radius', 'length', 'angle', 'inertia',
     'elasticity', 'friction',
+    'adhesins',  # number of adhesin molecules — used for surface attachment
 )
 _TUPLE_FIELDS = ('location', 'velocity')
 _STRING_FIELDS = ('type',)
@@ -36,6 +37,7 @@ _FLOAT_DEFAULTS = {
     'inertia': 0.0,
     'elasticity': 0.0,
     'friction': 0.8,
+    'adhesins': 0.0,
 }
 
 
@@ -88,6 +90,10 @@ def register_pymunk_agent_dispatches():
         if 'polyline' in update and update['polyline'] is not None:
             result['polyline'] = update['polyline']
 
+        # Attached flag (0.0 or 1.0): set semantics — used by adhesion
+        if 'attached' in update and update['attached'] is not None:
+            result['attached'] = update['attached']
+
         return result, []
 
     @reconcile.dispatch
@@ -135,6 +141,12 @@ def register_pymunk_agent_dispatches():
             v = u.get('polyline') if isinstance(u, dict) else None
             if v is not None:
                 result['polyline'] = v
+
+        # Attached flag: last non-None wins
+        for u in non_none:
+            v = u.get('attached') if isinstance(u, dict) else None
+            if v is not None:
+                result['attached'] = v
 
         return result if result else None
 
