@@ -171,6 +171,16 @@ def run_experiment(name, output_dir='out', entry=None):
 
     color_by_pressure = bool(config.get('color_by_pressure', False))
     field_overlay = config.get('field_overlay', None)
+    figure_size_inches = config.get('figure_size_inches', (6, 6))
+    draw_trails = bool(config.get('draw_trails', False))
+    trail_alpha = float(config.get('trail_alpha', 0.7))
+    trail_linewidth = float(config.get('trail_linewidth', 0.6))
+    trail_fade_frames = float(config.get('trail_fade_frames', 8.0))
+    trail_max_frames = int(config.get('trail_max_frames', 40))
+    env_width = config.get('env_width', None)
+    env_height = config.get('env_height', None)
+    scale_bar = config.get('scale_bar', None)
+    min_cell_px = float(config.get('min_cell_px', 0.0))
     gif_path = simulation_to_gif(
         results,
         filename=name,
@@ -189,6 +199,16 @@ def run_experiment(name, output_dir='out', entry=None):
         flow_regions=flow_regions or None,
         adhesion_surface=adhesion_surface,
         field_overlay=field_overlay,
+        figure_size_inches=figure_size_inches,
+        draw_trails=draw_trails,
+        trail_alpha=trail_alpha,
+        trail_linewidth=trail_linewidth,
+        trail_fade_frames=trail_fade_frames,
+        trail_max_frames=trail_max_frames,
+        env_width=env_width,
+        env_height=env_height,
+        scale_bar=scale_bar,
+        min_cell_px=min_cell_px,
     )
     print(f'GIF: {gif_path}')
 

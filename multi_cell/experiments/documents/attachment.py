@@ -4,7 +4,7 @@ import math
 from process_bigraph.emitter import emitter_from_wires
 
 from multi_cell.processes.multibody import build_microbe, make_rng
-from multi_cell.processes.grow_divide import add_grow_divide_to_agents
+from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
 from multi_cell.processes.secrete_eps import add_secrete_eps_to_agents
 
 
@@ -19,16 +19,12 @@ def attachment_document(config=None):
     config = config or {}
     env_size = config.get('env_size', 30)
     interval = config.get('interval', 30.0)
-    growth_rate = config.get('growth_rate', 0.000289)
     cell_radius = config.get('cell_radius', 0.5)
     cell_length = config.get('cell_length', 2.0)
     density = config.get('density', 0.02)
     n_cells = config.get('n_cells', 4)
     initial_adhesins = config.get('initial_adhesins', 8.0)
     adhesion_threshold = config.get('adhesion_threshold', 0.5)
-    division_threshold = config.get('division_threshold', None)
-    if division_threshold is None:
-        division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
 
     # Place initial cells in a small cluster near the middle of the x-axis,
     # 25% above the floor.
@@ -57,14 +53,11 @@ def attachment_document(config=None):
 
     initial_state = {'cells': cells, 'particles': {}}
 
-    add_grow_divide_to_agents(
+    add_adder_grow_divide_to_agents(
         initial_state,
         agents_key='cells',
         config={
             'agents_key': 'cells',
-            'rate': growth_rate,
-            'threshold': division_threshold,
-            'mutate': True,
         },
     )
 
@@ -89,8 +82,6 @@ def attachment_document(config=None):
             'address': 'local:PymunkProcess',
             'config': {
                 'env_size': env_size,
-                'gravity': 0.0,  # no gravity — only adhesion holds cells down
-                'elasticity': 0.0,
                 'jitter_per_second': 0.0008,  # gentle diffusive drift
                 'adhesion_enabled': True,
                 'adhesion_surface': 'bottom',

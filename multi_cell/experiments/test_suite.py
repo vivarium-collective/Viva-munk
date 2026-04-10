@@ -19,6 +19,7 @@ from multi_cell.experiments.documents import (
     bending_pressure_document,
     mother_machine_document,
     biofilm_document,
+    chemotaxis_document,
 )
 from multi_cell.experiments.registry import EXPERIMENT_REGISTRY
 from multi_cell.experiments.runner import (
@@ -45,6 +46,7 @@ __all__ = [
     'bending_pressure_document',
     'mother_machine_document',
     'biofilm_document',
+    'chemotaxis_document',
 ]
 
 

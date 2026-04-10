@@ -5,7 +5,7 @@ import numpy as np
 from process_bigraph.emitter import emitter_from_wires
 
 from multi_cell.processes.multibody import build_microbe, make_rng
-from multi_cell.processes.grow_divide import add_grow_divide_to_agents
+from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
 from multi_cell.processes.cell_field_exchange import make_cell_field_exchange_process
 
 
@@ -27,7 +27,6 @@ def glucose_growth_document(config=None):
     env_size = config.get('env_size', 24)            # μm
     n_bins = config.get('n_bins', (8, 8))             # 3 μm per bin
     interval = config.get('interval', 30.0)           # s
-    growth_rate = config.get('growth_rate', 0.0015)   # 1/s
     cell_radius = config.get('cell_radius', 0.5)
     cell_length = config.get('cell_length', 2.0)
     density = config.get('density', 0.02)
@@ -36,9 +35,6 @@ def glucose_growth_document(config=None):
     glucose_km = config.get('glucose_km', 0.5)        # mM (Monod K_s)
     glucose_diffusion = config.get('glucose_diffusion', 0.05)  # μm²/s
     nutrient_yield = config.get('nutrient_yield', 0.025)  # cell mass per mM glucose
-    division_threshold = config.get('division_threshold', None)
-    if division_threshold is None:
-        division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
 
     rng = make_rng(13)
     cells = {}
@@ -61,14 +57,12 @@ def glucose_growth_document(config=None):
         cells[aid] = cell
 
     initial_state = {'cells': cells}
-    add_grow_divide_to_agents(
+    add_adder_grow_divide_to_agents(
         initial_state,
         agents_key='cells',
         config={
             'agents_key': 'cells',
-            'rate': growth_rate,
-            'threshold': division_threshold,
-            'mutate': False,
+            'alpha_mean_per_h': 5.4,
             'pressure_k': 1e9,  # disable pressure inhibition for this experiment
             'nutrient_key': 'glucose',
             'nutrient_km': glucose_km,
@@ -87,8 +81,6 @@ def glucose_growth_document(config=None):
             'address': 'local:PymunkProcess',
             'config': {
                 'env_size': env_size,
-                'gravity': 0.0,
-                'elasticity': 0.0,
             },
             'interval': interval,
             'inputs': {

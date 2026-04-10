@@ -10,6 +10,7 @@ from multi_cell.experiments.documents.glucose_growth import glucose_growth_docum
 from multi_cell.experiments.documents.bending_pressure import bending_pressure_document
 from multi_cell.experiments.documents.mother_machine import mother_machine_document
 from multi_cell.experiments.documents.biofilm import biofilm_document
+from multi_cell.experiments.documents.chemotaxis import chemotaxis_document
 
 __all__ = [
     'daughter_machine_document',
@@ -18,4 +19,5 @@ __all__ = [
     'bending_pressure_document',
     'mother_machine_document',
     'biofilm_document',
+    'chemotaxis_document',
 ]

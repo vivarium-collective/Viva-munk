@@ -52,7 +52,6 @@ def daughter_machine_document(config=None):
             'address': 'local:PymunkProcess',
             'config': {
                 'env_size': env_size,
-                'gravity': 0,
                 'elasticity': 0.1,
             },
             'interval': interval,

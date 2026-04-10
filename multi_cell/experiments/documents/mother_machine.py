@@ -4,7 +4,7 @@ import math
 from process_bigraph.emitter import emitter_from_wires
 
 from multi_cell.processes.multibody import build_microbe, make_rng
-from multi_cell.processes.grow_divide import add_grow_divide_to_agents
+from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
 from multi_cell.processes.remove_crossing import make_remove_crossing_process
 
 
@@ -22,14 +22,7 @@ def mother_machine_document(config=None):
     # E. coli defaults (all in micrometers)
     cell_radius = config.get('cell_radius', 0.5)          # half-width of capsule
     cell_length = config.get('cell_length', 2.0)           # birth length
-    division_threshold_mass = config.get('division_threshold', None)
-
-    # Derive division threshold from geometry if not set:
-    # at division, length ~ 2x birth length, mass ~ density * 2r * L
     density = config.get('density', 0.02)
-    if division_threshold_mass is None:
-        division_length = cell_length * 2.0
-        division_threshold_mass = density * (2 * cell_radius) * division_length
 
     # Channel geometry
     channel_width = config.get('channel_width', 1.5)       # just wider than cell diameter
@@ -46,7 +39,6 @@ def mother_machine_document(config=None):
     env_size = float(env_size)
 
     interval = config.get('interval', 30.0)
-    growth_rate = config.get('growth_rate', 0.000289)  # ln(2)/2400 ~ 40 min doubling
 
     # Build barriers: vertical walls creating narrow channels
     barriers = []
@@ -82,14 +74,11 @@ def mother_machine_document(config=None):
 
     initial_state = {'cells': cells, 'particles': {}}
 
-    add_grow_divide_to_agents(
+    add_adder_grow_divide_to_agents(
         initial_state,
         agents_key='cells',
         config={
             'agents_key': 'cells',
-            'rate': growth_rate,
-            'threshold': division_threshold_mass,
-            'mutate': True,
         },
     )
 
@@ -101,7 +90,6 @@ def mother_machine_document(config=None):
             'address': 'local:PymunkProcess',
             'config': {
                 'env_size': env_size,
-                'gravity': 0,
                 'elasticity': 0.1,
                 'barriers': barriers,
                 'wall_thickness': spacer_thickness,

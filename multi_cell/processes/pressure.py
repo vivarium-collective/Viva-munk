@@ -14,6 +14,7 @@ Pressure is written to each cell's `pressure` field; downstream processes
 """
 import math
 
+import numpy as np
 from process_bigraph import Step
 
 
@@ -40,7 +41,6 @@ class Pressure(Step):
         }
 
     def update(self, state):
-        import numpy as np
         agents = state.get('agents', {}) or {}
         if not agents:
             return {'agents': {}}

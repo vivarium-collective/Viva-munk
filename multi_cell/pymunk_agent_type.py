@@ -109,6 +109,24 @@ def register_pymunk_agent_dispatches():
         if 'exchange' in update and update['exchange'] is not None:
             result['exchange'] = update['exchange']
 
+        # thrust / torque (floats): set semantics — refreshed each tick by
+        # the Chemotaxis process. PymunkProcess reads them and applies them
+        # as real forces on the body inside the substep loop.
+        if 'thrust' in update and update['thrust'] is not None:
+            result['thrust'] = update['thrust']
+        if 'torque' in update and update['torque'] is not None:
+            result['torque'] = update['torque']
+
+        # Chemotaxis state (set semantics, refreshed each tick by the
+        # Chemotaxis process):
+        #   motile_speed     — m/s, used by PymunkProcess to set body.velocity
+        #   motile_state     — 'run' or 'tumble' (string)
+        #   tumble_time_left — seconds remaining in the current tumble
+        #   c_memory         — exponential moving average of local ligand
+        for key in ('motile_speed', 'motile_state', 'tumble_time_left', 'c_memory', 'prev_ligand'):
+            if key in update and update[key] is not None:
+                result[key] = update[key]
+
         return result, []
 
     @reconcile.dispatch
@@ -190,6 +208,17 @@ def register_pymunk_agent_dispatches():
                     merged_exchange[k] = merged_exchange.get(k, 0.0) + val
         if merged_exchange is not None:
             result['exchange'] = merged_exchange
+
+        # thrust / torque / chemotaxis state: last non-None wins
+        for key in (
+            'thrust', 'torque',
+            'motile_speed', 'motile_state', 'tumble_time_left',
+            'c_memory', 'prev_ligand',
+        ):
+            for u in non_none:
+                v = u.get(key) if isinstance(u, dict) else None
+                if v is not None:
+                    result[key] = v
 
         return result if result else None
 

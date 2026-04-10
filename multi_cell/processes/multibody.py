@@ -1,6 +1,4 @@
-"""
-TODO: use an actual grow/divide process for demo
-"""
+"""Pymunk 2D physics process and placement helpers."""
 import random
 import math
 import uuid
@@ -70,6 +68,9 @@ def local_impulse_point_for_shape(shape):
 class PymunkProcess(Process):
     config_schema = {
         'env_size': {'_type': 'float', '_default': 500},
+        # Optional rectangular chamber. If env_height is 0 or unset, the
+        # chamber is square (height = env_size).
+        'env_height': {'_type': 'float', '_default': 0.0},
         'substeps': {'_type': 'integer', '_default': 10},
         'damping_per_second': {'_type': 'float', '_default': 0.1},
         'gravity': {'_type': 'float', '_default': 0.0},
@@ -101,8 +102,14 @@ class PymunkProcess(Process):
 
         self.agents = {}
 
-        # add walls
+        # add walls — chamber is env_size wide and env_height tall (or
+        # env_size tall if env_height is 0 / unset, for backwards compat).
         env_size = self.config['env_size']
+        env_height = float(self.config.get('env_height', 0.0) or 0.0)
+        if env_height <= 0.0:
+            env_height = float(env_size)
+        self._env_width = float(env_size)
+        self._env_height = env_height
         boundary_thickness = self.config.get('wall_thickness', 100)
         walls = [
             pymunk.Segment(self.space.static_body,
@@ -112,16 +119,16 @@ class PymunkProcess(Process):
                            ),
             pymunk.Segment(self.space.static_body,
                            (env_size + boundary_thickness, -boundary_thickness),
-                           (env_size + boundary_thickness, env_size + boundary_thickness),
+                           (env_size + boundary_thickness, env_height + boundary_thickness),
                            boundary_thickness
                            ),
             pymunk.Segment(self.space.static_body,
-                           (env_size + boundary_thickness, env_size + boundary_thickness),
-                           (-boundary_thickness, env_size + boundary_thickness),
+                           (env_size + boundary_thickness, env_height + boundary_thickness),
+                           (-boundary_thickness, env_height + boundary_thickness),
                            boundary_thickness
                            ),
             pymunk.Segment(self.space.static_body,
-                           (-boundary_thickness, env_size + boundary_thickness),
+                           (-boundary_thickness, env_height + boundary_thickness),
                            (-boundary_thickness, -boundary_thickness),
                            boundary_thickness
                            )
@@ -219,6 +226,25 @@ class PymunkProcess(Process):
             for obj in self.agents.values():
                 if obj.get('type') == 'circle':
                     particle_body_ids.add(id(obj['body']))
+        # Pre-collect cells driven by chemotaxis (or any caller that injects
+        # thrust/torque/motile_speed). We key off the *presence* of the
+        # motile_speed key — chemotaxis cells in tumble state still need
+        # velocity hard-zeroed each substep — but non-chemotaxis cells must
+        # NOT carry that key, otherwise the substep loop would zero their
+        # velocity every step and prevent collisions from pushing them
+        # (this broke mother machine until create_new_object stopped
+        # auto-inserting motile_speed=0.0).
+        motile_cells = [
+            (a['body'], a)
+            for a in self.agents.values()
+            if a.get('kind') == 'rigid'
+            and a.get('type') == 'segment'
+            and (
+                'motile_speed' in a
+                or a.get('thrust', 0.0)
+                or a.get('torque', 0.0)
+            )
+        ]
         for _ in range(n_steps):
             self.space.damping = d_step
             if apply_jitter:
@@ -228,6 +254,25 @@ class PymunkProcess(Process):
                             self.apply_jitter_force(body, dt, sigma_particle)
                     else:
                         self.apply_jitter_force(body, dt, sigma)
+            for body, agent in motile_cells:
+                # Direct velocity control for chemotaxis cells: when
+                # `motile_speed` is set the chemotaxis process owns the
+                # cell's swimming speed, and we override body.velocity each
+                # substep so the cell really moves at exactly that speed
+                # along its current heading. Setting motile_speed = 0
+                # gives a hard stop (used during tumbles).
+                if 'motile_speed' in agent:
+                    speed = float(agent.get('motile_speed', 0.0) or 0.0)
+                    ang = body.angle
+                    body.velocity = (speed * math.cos(ang), speed * math.sin(ang))
+                # Force-based thrust / torque (still supported alongside
+                # the velocity-control path).
+                thrust = float(agent.get('thrust', 0.0) or 0.0)
+                torque = float(agent.get('torque', 0.0) or 0.0)
+                if thrust != 0.0:
+                    body.apply_force_at_local_point((thrust, 0.0), (0.0, 0.0))
+                if torque != 0.0:
+                    body.torque += torque
             self.space.step(dt)
         # Run adhesion once per process tick (not per substep) — cheap and sufficient
         if adhesion_enabled:
@@ -550,6 +595,16 @@ class PymunkProcess(Process):
         # Track adhesin count if provided (used by adhesion logic)
         if 'adhesins' in attrs and attrs['adhesins'] is not None:
             agent['adhesins'] = float(attrs['adhesins'])
+        # Sync chemotaxis thrust/torque from the framework state into the
+        # internal agent dict so the substep loop can apply them as forces.
+        agent['thrust'] = float(attrs.get('thrust', 0.0) or 0.0)
+        agent['torque'] = float(attrs.get('torque', 0.0) or 0.0)
+        # Sync chemotaxis motile_speed (cell swimming speed in m/s). The
+        # substep loop reads this and sets body.velocity directly each
+        # iteration so the cell moves at exactly this speed in its
+        # current heading direction (or stops at 0 during a tumble).
+        if 'motile_speed' in attrs and attrs['motile_speed'] is not None:
+            agent['motile_speed'] = float(attrs['motile_speed'])
 
     def create_new_object(self, agent_id, attrs, kind='rigid'):
         if kind == 'bending':
@@ -603,7 +658,16 @@ class PymunkProcess(Process):
             'adhesins': float(attrs.get('adhesins', 0.0) or 0.0),
             'attached': False,
             'attachment_joint': None,
+            'thrust': float(attrs.get('thrust', 0.0) or 0.0),
+            'torque': float(attrs.get('torque', 0.0) or 0.0),
         }
+        # Only attach motile_speed if the caller explicitly set it (e.g.
+        # a chemotaxis cell that has the key in its initial state).
+        # Otherwise leave it absent so the substep loop's
+        # `'motile_speed' in agent` test stays False for normal cells and
+        # we don't end up zeroing their velocities every substep.
+        if 'motile_speed' in attrs and attrs['motile_speed'] is not None:
+            self.agents[agent_id]['motile_speed'] = float(attrs['motile_speed'])
 
     # ------------------------------------------------------------------
     # Bending cell support — multi-segment compound bodies
@@ -794,9 +858,6 @@ class PymunkProcess(Process):
                 }
         return state
 
-import math
-import uuid
-import random
 
 # -------------------------
 # Utilities

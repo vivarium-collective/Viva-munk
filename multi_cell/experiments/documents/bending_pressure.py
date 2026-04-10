@@ -4,7 +4,7 @@ import math
 from process_bigraph.emitter import emitter_from_wires
 
 from multi_cell.processes.multibody import build_microbe, make_rng
-from multi_cell.processes.grow_divide import add_grow_divide_to_agents
+from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
 from multi_cell.processes.pressure import make_pressure_process
 
 
@@ -20,7 +20,6 @@ def bending_pressure_document(config=None):
     config = config or {}
     env_size = config.get('env_size', 30)
     interval = config.get('interval', 30.0)
-    growth_rate = config.get('growth_rate', 0.000578)  # ~20 min unstressed doubling
     cell_radius = config.get('cell_radius', 0.5)
     cell_length = config.get('cell_length', 2.0)
     density = config.get('density', 0.02)
@@ -32,9 +31,6 @@ def bending_pressure_document(config=None):
     stiffness = config.get('bending_stiffness', 15.0)
     damping = config.get('bending_damping', 5.0)
     jitter = config.get('jitter_per_second', 0.0)
-    division_threshold = config.get('division_threshold', None)
-    if division_threshold is None:
-        division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
 
     rng = make_rng(11)
     cells = {}
@@ -58,14 +54,11 @@ def bending_pressure_document(config=None):
 
     initial_state = {'cells': cells, 'particles': {}}
 
-    add_grow_divide_to_agents(
+    add_adder_grow_divide_to_agents(
         initial_state,
         agents_key='cells',
         config={
             'agents_key': 'cells',
-            'rate': growth_rate,
-            'threshold': division_threshold,
-            'mutate': True,
             'pressure_k': pressure_k,
         },
     )
@@ -78,8 +71,6 @@ def bending_pressure_document(config=None):
             'address': 'local:PymunkProcess',
             'config': {
                 'env_size': env_size,
-                'gravity': 0.0,
-                'elasticity': 0.0,
                 'jitter_per_second': jitter,
                 'n_bending_segments': n_segments,
                 'bending_stiffness': stiffness,

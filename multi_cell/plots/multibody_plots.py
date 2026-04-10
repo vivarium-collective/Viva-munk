@@ -105,42 +105,89 @@ class GifRenderer:
         self, env_size, barriers, figure_size_inches, dpi, show_time_title,
         world_pad, max_line_px, xlim=None, ylim=None, flow_regions=None,
         draw_walls=True, adhesion_surface=None, field_overlay=None,
+        draw_trails=False, trail_alpha=0.7, trail_linewidth=0.6,
+        trail_fade_frames=8.0, trail_max_frames=40,
+        env_width=None, env_height=None,
+        scale_bar=None,
+        min_cell_px=0.0,
     ):
         self.env_size = float(env_size)
+        # Rectangular chamber support: if env_width / env_height aren't
+        # explicitly given, fall back to env_size for both (square chamber).
+        self.env_width = float(env_width) if env_width else float(env_size)
+        self.env_height = float(env_height) if env_height else float(env_size)
+        self.scale_bar_cfg = scale_bar
+        self.min_cell_px = float(min_cell_px)
         self.show_time_title = show_time_title
         self.max_line_px = int(max_line_px)
         # Optional concentration-field background overlay
         # field_overlay = {'key': 'fields', 'mol_id': 'glucose', 'vmin', 'vmax', 'cmap', 'alpha', 'colorbar': bool}
         self.field_overlay_cfg = field_overlay
         self.field_overlay_artist = None
+        # Per-cell trail rendering with fading alpha. Each draw_frame call
+        # appends the cell's current location to a per-id history and
+        # rebuilds a LineCollection where the most recent segments have
+        # full alpha and older segments fade out exponentially with
+        # `trail_fade_frames` as the time constant. History is capped at
+        # `trail_max_frames` to bound memory and rendering cost.
+        self.draw_trails = bool(draw_trails)
+        self.trail_alpha = float(trail_alpha)
+        self.trail_linewidth = float(trail_linewidth)
+        self.trail_fade_frames = max(1e-6, float(trail_fade_frames))
+        self.trail_max_frames = int(trail_max_frames)
+        self._trail_history = {}      # cell_id -> list[(x, y)]
+        self._trail_collections = {}  # cell_id -> LineCollection
 
         x0, x1 = xlim if xlim else (0, self.env_size)
         y0, y1 = ylim if ylim else (0, self.env_size)
 
-        # fig/ax/canvas — match figure aspect ratio to data
+        # fig/ax/canvas — match figure aspect ratio to data, but if the
+        # caller passes an EXPLICIT non-square figure_size_inches use it
+        # directly so extreme aspect ratios stay readable.
         data_w = x1 - x0
         data_h = y1 - y0
-        base = figure_size_inches[0]
-        if data_h > data_w:
-            fig_w = base * (data_w / data_h)
-            fig_h = base
+        if (
+            figure_size_inches
+            and len(figure_size_inches) >= 2
+            and figure_size_inches[0] != figure_size_inches[1]
+        ):
+            fig_w, fig_h = float(figure_size_inches[0]), float(figure_size_inches[1])
         else:
-            fig_w = base
-            fig_h = base * (data_h / data_w)
+            base = figure_size_inches[0] if figure_size_inches else 6.0
+            if data_h > data_w:
+                fig_w = base * (data_w / data_h)
+                fig_h = base
+            else:
+                fig_w = base
+                fig_h = base * (data_h / data_w)
 
         # When a field colorbar is shown, widen the figure so it lives in its
-        # own column to the right of the data axes.
+        # own column to the right of the data axes. The fraction can be
+        # tuned per-experiment via field_overlay['width_frac'] (default
+        # 0.10 — narrow enough to leave room for the chamber but wide
+        # enough to fit tick labels).
         show_field_cbar = bool(field_overlay and field_overlay.get('colorbar'))
-        cbar_extra = 0.22 * fig_w if show_field_cbar else 0.0
+        cbar_width_frac = float(field_overlay.get('width_frac', 0.10)) if show_field_cbar else 0.0
+        cbar_extra = cbar_width_frac * fig_w if show_field_cbar else 0.0
+
+        # Reserve some figure space below the data axes for the scale bar
+        # (when one is configured) so the bar sits *below* the chamber rather
+        # than over the cells. The scale bar itself is positioned via
+        # bbox_to_anchor in axes-fraction coordinates inside _draw_scale_bar.
+        bottom_margin = 0.10 if self.scale_bar_cfg else 0.02
+        top_margin = 0.08 if show_time_title else 0.02
+        ax_height = max(0.05, 1.0 - bottom_margin - top_margin)
 
         self.fig = plt.figure(figsize=(fig_w + cbar_extra, fig_h), dpi=dpi)
         self.canvas = FigureCanvas(self.fig)
         if show_field_cbar:
             # Reserve a column on the right for the colorbar
             ax_frac = fig_w / (fig_w + cbar_extra)
-            self.ax = self.fig.add_axes([0.02, 0.02, ax_frac * 0.93, 0.96])
+            self.ax = self.fig.add_axes(
+                [0.02, bottom_margin, ax_frac * 0.93, ax_height]
+            )
         else:
-            self.ax = self.fig.add_subplot(111)
+            self.ax = self.fig.add_axes([0.02, bottom_margin, 0.96, ax_height])
         self.ax.set_aspect('equal', adjustable='box')
         self.ax.set_xlim(x0, x1)
         self.ax.set_ylim(y0, y1)
@@ -153,7 +200,16 @@ class GifRenderer:
         self.img_bbox = (0, 0, w - 1, h - 1)
         self.ypu = _pixels_per_data_y(self.ax)
         self.pad_px = int(round(world_pad * self.ypu))
-        self.title_obj = self.ax.set_title("") if show_time_title else None
+        # Use a monospace font + fixed-width HH:MM:SS format so the title's
+        # bounding box stays the exact same width every frame. Otherwise the
+        # centered title shifts horizontally as digits and units change,
+        # which looks like the title is "jittering".
+        if show_time_title:
+            self.title_obj = self.ax.set_title(
+                "", fontfamily='monospace', fontsize=11, loc='center',
+            )
+        else:
+            self.title_obj = None
 
         # Field overlay (heatmap) drawn first so cells render on top of it
         if self.field_overlay_cfg:
@@ -169,6 +225,8 @@ class GifRenderer:
         self._draw_barriers(barriers)
         if show_field_cbar:
             self._draw_field_colorbar(field_overlay)
+        if self.scale_bar_cfg:
+            self._draw_scale_bar(self.scale_bar_cfg)
 
         # pools (grow-on-demand)
         self.circle_pool = []
@@ -241,10 +299,66 @@ class GifRenderer:
         """Draw the four chamber walls as a thin gray rectangle outline."""
         from matplotlib.patches import Rectangle
         rect = Rectangle(
-            (0, 0), self.env_size, self.env_size,
+            (0, 0), self.env_width, self.env_height,
             facecolor='none', edgecolor='#888', linewidth=1.2,
         )
         self.ax.add_patch(rect)
+
+    def _draw_scale_bar(self, cfg):
+        """Draw a thin scale bar in the figure margin below the data axes.
+
+        The bar's *length* is in data units (so it represents a real
+        distance in µm), but its position is in axes-fraction coordinates
+        so it sits below the chamber rather than over the cells, and its
+        *thickness* is set in matplotlib points so it stays a thin line
+        regardless of the chamber size.
+        """
+        size = float(cfg.get('size', 100.0))
+        label = cfg.get('label', f'{int(size)} µm')
+        loc = cfg.get('loc', 'lower right')
+        color = cfg.get('color', '#222')
+        fontsize = int(cfg.get('fontsize', 11))
+        linewidth_pt = float(cfg.get('linewidth', 1.6))
+
+        # Convert data-unit bar length to an axes-fraction width.
+        x0, x1 = self.ax.get_xlim()
+        if x1 == x0:
+            return
+        bar_frac = abs(size / (x1 - x0))
+
+        # Below the axes — small negative y in axes coords.
+        y_bar = -0.04
+        y_label = -0.07
+
+        if 'right' in loc:
+            bar_x_end = 0.99
+            bar_x_start = bar_x_end - bar_frac
+            text_x = bar_x_start + bar_frac / 2
+        elif 'left' in loc:
+            bar_x_start = 0.01
+            bar_x_end = bar_x_start + bar_frac
+            text_x = bar_x_start + bar_frac / 2
+        else:
+            bar_x_start = 0.5 - bar_frac / 2
+            bar_x_end = 0.5 + bar_frac / 2
+            text_x = 0.5
+
+        bar_line = Line2D(
+            [bar_x_start, bar_x_end], [y_bar, y_bar],
+            transform=self.ax.transAxes,
+            color=color,
+            linewidth=linewidth_pt,
+            solid_capstyle='butt',
+            clip_on=False,
+        )
+        self.ax.add_line(bar_line)
+        self.ax.text(
+            text_x, y_label, label,
+            transform=self.ax.transAxes,
+            ha='center', va='top',
+            fontsize=fontsize, color=color,
+            clip_on=False,
+        )
 
     def _draw_adhesion_surface(self, surface):
         """Highlight the adhesion surface with a colored line."""
@@ -270,10 +384,12 @@ class GifRenderer:
             return
         label = field_cfg.get('colorbar_label') or field_cfg.get('mol_id') or 'concentration'
         ax_pos = self.ax.get_position()
-        cax_left = ax_pos.x1 + 0.02
+        cax_left = ax_pos.x1 + 0.015
         cax_width = max(0.02, 1.0 - cax_left - 0.04)
+        # Use most of the reserved column for the visible bar — the
+        # remainder is just enough to keep tick labels from clipping.
         cax = self.fig.add_axes([cax_left, ax_pos.y0 + 0.10,
-                                 cax_width * 0.4, ax_pos.height * 0.7])
+                                 cax_width * 0.55, ax_pos.height * 0.7])
         cbar = self.fig.colorbar(self.field_overlay_artist, cax=cax)
         cbar.set_label(label, fontsize=10)
         cbar.ax.tick_params(labelsize=9)
@@ -310,6 +426,63 @@ class GifRenderer:
             self.segment_pool.append(ln)
         return self.segment_pool[idx]
 
+    def _update_trails(self, layer, color_fn):
+        """Append each cell's current position to its history and update
+        a per-cell LineCollection where the most recent segments are
+        opaque and older segments fade out exponentially with time."""
+        from matplotlib.collections import LineCollection
+        for aid, ent in layer.items():
+            loc = ent.get('location') if isinstance(ent, dict) else None
+            if loc is None or len(loc) < 2:
+                continue
+            try:
+                x = float(loc[0])
+                y = float(loc[1])
+            except (TypeError, ValueError):
+                continue
+            if not (math.isfinite(x) and math.isfinite(y)):
+                continue
+            history = self._trail_history.get(aid)
+            if history is None:
+                history = []
+                self._trail_history[aid] = history
+            history.append((x, y))
+            # Cap history to bound memory and rendering cost.
+            if len(history) > self.trail_max_frames:
+                # Drop the oldest entries.
+                del history[: len(history) - self.trail_max_frames]
+            n = len(history)
+            if n < 2:
+                continue
+            # Build segments with fading per-segment alpha. Most recent
+            # segment (index n-2) has full alpha; older segments decay
+            # exponentially with trail_fade_frames as the e-folding time.
+            color = color_fn(aid, ent)
+            r, g, b = float(color[0]), float(color[1]), float(color[2])
+            segments = []
+            rgba = []
+            for i in range(n - 1):
+                age = (n - 2) - i  # 0 for newest, n-2 for oldest
+                a = self.trail_alpha * math.exp(-age / self.trail_fade_frames)
+                if a < 0.01:
+                    continue  # invisible — skip
+                segments.append([history[i], history[i + 1]])
+                rgba.append((r, g, b, a))
+            lc = self._trail_collections.get(aid)
+            if lc is None:
+                lc = LineCollection(
+                    segments, colors=rgba,
+                    linewidths=self.trail_linewidth,
+                    capstyle='round',
+                    antialiased=True,
+                    zorder=-1,
+                )
+                self.ax.add_collection(lc)
+                self._trail_collections[aid] = lc
+            else:
+                lc.set_segments(segments)
+                lc.set_colors(rgba)
+
     # ------- per-frame update -------
     def draw_frame(self, step, agents_key, color_fn, max_radius_px):
         c_vis = s_vis = 0
@@ -317,6 +490,10 @@ class GifRenderer:
 
         # Update field background overlay (if configured)
         self._update_field_overlay(step)
+
+        # Append to and refresh persistent path-trail artists.
+        if self.draw_trails:
+            self._update_trails(layer, color_fn)
 
         # Defensive: hide ALL pool slots before drawing to guarantee no stale
         # state from a previous frame can leak through.
@@ -346,6 +523,13 @@ class GifRenderer:
             if r <= 0: continue
             color = color_fn(aid, o)
             lw_data = 2.0 * r  # capsule diameter in data units
+            # Clamp to a minimum on-screen pixel width so very small cells
+            # in a large chamber are still visible. min_cell_px is given
+            # in screen pixels; ypu = pixels per data unit.
+            if self.min_cell_px > 0 and self.ypu > 0:
+                min_lw_data = self.min_cell_px / self.ypu
+                if lw_data < min_lw_data:
+                    lw_data = min_lw_data
 
             # Build a polyline for this cell. Bending cells emit one from
             # PymunkProcess; others (and freshly-divided daughters that have
@@ -374,9 +558,17 @@ class GifRenderer:
                 art.set_visible(True)
                 s_vis += 1
 
-        # title
+        # title — fixed-width HH:MM:SS so the centered title doesn't shift
+        # horizontally as the simulation time grows.
         if self.show_time_title and self.title_obj is not None:
-            self.title_obj.set_text(f"t={step.get('time', 0):.1f}")
+            t_now = float(step.get('time', 0) or 0)
+            if not math.isfinite(t_now):
+                t_now = 0.0
+            t_int = int(t_now)
+            hh = t_int // 3600
+            mm = (t_int % 3600) // 60
+            ss = t_int % 60
+            self.title_obj.set_text(f"t = {hh:02d}:{mm:02d}:{ss:02d}")
 
         # full redraw
         self.canvas.draw()
@@ -418,6 +610,15 @@ def simulation_to_gif(
     particle_color=(0.85, 0.85, 0.55),  # default EPS/particle color (pale yellow)
     frame_duration_ms=100,  # milliseconds per frame in the GIF
     field_overlay=None,     # optional dict {'mol_id', 'vmax', 'cmap', 'alpha'} for heatmap background
+    draw_trails=False,      # if True, trace each cell's path across frames
+    trail_alpha=0.7,
+    trail_linewidth=0.6,
+    trail_fade_frames=8.0,  # e-folding age (in frames) for trail alpha decay
+    trail_max_frames=40,    # max # of past positions kept per cell
+    env_width=None,         # rectangular chamber width (defaults to env_size)
+    env_height=None,        # rectangular chamber height (defaults to env_size)
+    scale_bar=None,         # dict {size, label, loc, ...} or None
+    min_cell_px=0.0,        # min on-screen pixel width for rendered cells
 ):
     """
     Efficient Matplotlib renderer:
@@ -507,6 +708,15 @@ def simulation_to_gif(
         flow_regions=flow_regions, draw_walls=draw_walls,
         adhesion_surface=adhesion_surface,
         field_overlay=field_overlay,
+        draw_trails=draw_trails,
+        trail_alpha=trail_alpha,
+        trail_linewidth=trail_linewidth,
+        trail_fade_frames=trail_fade_frames,
+        trail_max_frames=trail_max_frames,
+        env_width=env_width,
+        env_height=env_height,
+        scale_bar=scale_bar,
+        min_cell_px=min_cell_px,
     )
     try:
         pil_frames = [renderer.draw_frame(step, agents_key, _color, max_radius_px) for step in frames]
