@@ -21,12 +21,19 @@ def biofilm_document(config=None):
 
     eps_radius = config.get('eps_radius', 0.15)
     n_initial_particles = config.get('n_initial_particles', 0)
+    # Particle size distribution. Default 'log_uniform' gives a scale-free
+    # spread of radii — equal density per decade — so the chamber gets a few
+    # large boulders mixed in with many small grains.
+    particle_radius_min = config.get('particle_radius_min', eps_radius)
+    particle_radius_max = config.get('particle_radius_max', eps_radius * 30)
+    particle_radius_dist = config.get('particle_radius_dist', 'log_uniform')
 
     initial_state = make_initial_state(
         n_microbes=n_cells,
         n_particles=n_initial_particles,
         env_size=env_size,
-        particle_radius_range=(eps_radius, eps_radius * 20),
+        particle_radius_range=(particle_radius_min, particle_radius_max),
+        particle_radius_dist=particle_radius_dist,
         microbe_length_range=(cell_length, cell_length),
         microbe_radius_range=(cell_radius, cell_radius),
         microbe_mass_density=density,

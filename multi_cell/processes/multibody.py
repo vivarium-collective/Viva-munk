@@ -848,10 +848,17 @@ def build_particle(
     # geometry / mass (circle)
     radius=None, mass=None, density=0.015,
     radius_range=None,
+    radius_dist='uniform',  # 'uniform' or 'log_uniform' (scale-free)
 ):
     # derive geometry/mass if needed
     if radius is None and mass is None:
-        radius = rng.uniform(*radius_range) if radius_range else rng.uniform(1.0, 10.0)
+        rng_lo, rng_hi = radius_range if radius_range else (1.0, 10.0)
+        if radius_dist == 'log_uniform' and rng_lo > 0 and rng_hi > rng_lo:
+            # Sample uniformly in log-space → equal density per decade of size,
+            # so the resulting distribution is approximately scale-free.
+            radius = math.exp(rng.uniform(math.log(rng_lo), math.log(rng_hi)))
+        else:
+            radius = rng.uniform(rng_lo, rng_hi)
     if mass is None:
         mass = circle_mass_from_radius(radius, density)
     if radius is None:
@@ -1012,6 +1019,7 @@ def make_initial_state(
     elasticity=0.0,
     # particle defaults
     particle_radius_range=(1.0, 10.0),
+    particle_radius_dist='uniform',  # 'uniform' or 'log_uniform'
     particle_mass_density=0.015,
     particle_speed_range=(0.0, 10.0),
     # microbe defaults
@@ -1038,6 +1046,7 @@ def make_initial_state(
             density=particle_mass_density,
             speed_range=particle_speed_range,
             radius_range=particle_radius_range,
+            radius_dist=particle_radius_dist,
         )
     )
 

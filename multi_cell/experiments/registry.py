@@ -41,13 +41,20 @@ EXPERIMENT_REGISTRY = {
         'config': {
             'env_size': 60,
             'n_cells': 5,
-            'n_initial_particles': 300,
+            'n_initial_particles': 450,
+            # Scale-free particle sizes: log-uniform from 0.1 to 5.0 μm
+            # gives ~5 octaves of size, so each octave of radii has roughly
+            # equal density and the chamber holds a few large boulders
+            # mixed with many small grains.
+            'particle_radius_min': 0.1,
+            'particle_radius_max': 5.0,
+            'particle_radius_dist': 'log_uniform',
         },
-        'description': 'Multiple E. coli-scale cells grow and divide in an environment seeded with passive particles of varying sizes. The cells push and rearrange the particles as they grow.',
+        'description': 'Multiple E. coli-scale cells grow and divide in an environment seeded with passive particles whose sizes follow a scale-free (log-uniform) distribution. A few large boulders share the chamber with many small grains; cells push and rearrange them as they grow.',
     },
     'bending_pressure': {
         'document': bending_pressure_document,
-        'time': 21600.0,  # 6 hours
+        'time': 25200.0,  # 7 hours
         'config': {
             'env_size': 30,
             'n_cells': 1,
