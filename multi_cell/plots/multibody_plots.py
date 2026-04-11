@@ -619,6 +619,7 @@ def simulation_to_gif(
     env_height=None,        # rectangular chamber height (defaults to env_size)
     scale_bar=None,         # dict {size, label, loc, ...} or None
     min_cell_px=0.0,        # min on-screen pixel width for rendered cells
+    color_fn=None,          # custom (agent_id, agent_dict) -> (r, g, b)
 ):
     """
     Efficient Matplotlib renderer:
@@ -644,7 +645,9 @@ def simulation_to_gif(
 
     # color policy
     _pc = particle_color
-    if color_by_pressure:
+    if color_fn is not None:
+        _color = color_fn
+    elif color_by_pressure:
         # Gray (0.7, 0.7, 0.7) at zero pressure → red (0.85, 0.1, 0.1) at pressure_max
         gray = (0.7, 0.7, 0.7)
         red = (0.85, 0.1, 0.1)
