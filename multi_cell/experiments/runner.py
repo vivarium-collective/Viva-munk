@@ -170,6 +170,32 @@ def run_experiment(name, output_dir='out', entry=None):
     skip = max(1, len(results) // target_frames)
 
     color_by_pressure = bool(config.get('color_by_pressure', False))
+    color_by_inclusion_body = bool(config.get('color_by_inclusion_body', False))
+    color_fn = None
+    cell_colorbar = None
+    if color_by_inclusion_body:
+        import matplotlib.cm as _cm
+        from matplotlib.colors import Normalize as _Normalize
+        ib_max = float(config.get('inclusion_body_max_visual', 10.0))
+        cmap_name = config.get('inclusion_body_cmap', 'plasma')
+        cmap = _cm.get_cmap(cmap_name)
+        norm = _Normalize(vmin=0.0, vmax=ib_max, clip=True)
+        particle_rgb = (0.85, 0.85, 0.55)
+        def color_fn(aid, ent=None):
+            if aid.startswith(('eps_', 'p_')):
+                return particle_rgb
+            ib = 0.0
+            if isinstance(ent, dict):
+                ib = float(ent.get('inclusion_body', 0.0) or 0.0)
+            r, g, b, _ = cmap(norm(ib))
+            return (r, g, b)
+        cell_colorbar = {
+            'vmin': 0.0,
+            'vmax': ib_max,
+            'cmap': cmap_name,
+            'label': config.get('inclusion_body_colorbar_label', 'inclusion-body size'),
+            'width_frac': float(config.get('inclusion_body_colorbar_width_frac', 0.14)),
+        }
     field_overlay = config.get('field_overlay', None)
     figure_size_inches = config.get('figure_size_inches', (6, 6))
     draw_trails = bool(config.get('draw_trails', False))
@@ -186,8 +212,9 @@ def run_experiment(name, output_dir='out', entry=None):
         filename=name,
         config=gif_config,
         out_dir=output_dir,
-        color_by_phylogeny=not color_by_pressure,
-        color_by_pressure=color_by_pressure,
+        color_by_phylogeny=not (color_by_pressure or color_fn is not None),
+        color_by_pressure=color_by_pressure and color_fn is None,
+        color_fn=color_fn,
         pressure_max=float(config.get('pressure_max_visual', 8.0)),
         skip_frames=skip,
         frame_duration_ms=50,
@@ -209,6 +236,7 @@ def run_experiment(name, output_dir='out', entry=None):
         env_height=env_height,
         scale_bar=scale_bar,
         min_cell_px=min_cell_px,
+        cell_colorbar=cell_colorbar,
     )
     print(f'GIF: {gif_path}')
 

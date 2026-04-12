@@ -110,6 +110,7 @@ class GifRenderer:
         env_width=None, env_height=None,
         scale_bar=None,
         min_cell_px=0.0,
+        cell_colorbar=None,
     ):
         self.env_size = float(env_size)
         # Rectangular chamber support: if env_width / env_height aren't
@@ -124,6 +125,10 @@ class GifRenderer:
         # field_overlay = {'key': 'fields', 'mol_id': 'glucose', 'vmin', 'vmax', 'cmap', 'alpha', 'colorbar': bool}
         self.field_overlay_cfg = field_overlay
         self.field_overlay_artist = None
+        # cell_colorbar = {'vmin', 'vmax', 'cmap', 'label', 'width_frac'}
+        # Standalone colorbar (not tied to an imshow) for per-cell coloring
+        # driven by a custom color_fn (e.g. coloring by inclusion-body size).
+        self.cell_colorbar_cfg = cell_colorbar
         # Per-cell trail rendering with fading alpha. Each draw_frame call
         # appends the cell's current location to a per-id history and
         # rebuilds a LineCollection where the most recent segments have
@@ -167,8 +172,14 @@ class GifRenderer:
         # 0.10 — narrow enough to leave room for the chamber but wide
         # enough to fit tick labels).
         show_field_cbar = bool(field_overlay and field_overlay.get('colorbar'))
-        cbar_width_frac = float(field_overlay.get('width_frac', 0.10)) if show_field_cbar else 0.0
-        cbar_extra = cbar_width_frac * fig_w if show_field_cbar else 0.0
+        show_cell_cbar = bool(self.cell_colorbar_cfg)
+        cbar_width_frac = 0.0
+        if show_field_cbar:
+            cbar_width_frac = float(field_overlay.get('width_frac', 0.10))
+        elif show_cell_cbar:
+            cbar_width_frac = float(self.cell_colorbar_cfg.get('width_frac', 0.10))
+        any_cbar = show_field_cbar or show_cell_cbar
+        cbar_extra = cbar_width_frac * fig_w if any_cbar else 0.0
 
         # Reserve some figure space below the data axes for the scale bar
         # (when one is configured) so the bar sits *below* the chamber rather
@@ -180,7 +191,7 @@ class GifRenderer:
 
         self.fig = plt.figure(figsize=(fig_w + cbar_extra, fig_h), dpi=dpi)
         self.canvas = FigureCanvas(self.fig)
-        if show_field_cbar:
+        if any_cbar:
             # Reserve a column on the right for the colorbar
             ax_frac = fig_w / (fig_w + cbar_extra)
             self.ax = self.fig.add_axes(
@@ -225,6 +236,8 @@ class GifRenderer:
         self._draw_barriers(barriers)
         if show_field_cbar:
             self._draw_field_colorbar(field_overlay)
+        elif show_cell_cbar:
+            self._draw_cell_colorbar(self.cell_colorbar_cfg)
         if self.scale_bar_cfg:
             self._draw_scale_bar(self.scale_bar_cfg)
 
@@ -400,6 +413,36 @@ class GifRenderer:
         cbar.set_ticks(ticks)
         cbar.set_ticklabels([f'{t:.2f}' for t in ticks])
         self._field_colorbar = cbar
+
+    def _draw_cell_colorbar(self, cfg):
+        """Standalone colorbar for per-cell color_fn coloring.
+
+        Unlike the field colorbar this is not linked to an imshow artist —
+        instead it's drawn from a ScalarMappable built from the same cmap
+        and range the color_fn uses, so the bar on-screen matches the
+        cell colors pixel for pixel.
+        """
+        from matplotlib.colors import Normalize
+        from matplotlib.cm import ScalarMappable
+        cmap = cfg.get('cmap', 'Reds')
+        vmin = float(cfg.get('vmin', 0.0))
+        vmax = float(cfg.get('vmax', 1.0))
+        label = cfg.get('label', 'cell value')
+        ax_pos = self.ax.get_position()
+        cax_left = ax_pos.x1 + 0.015
+        cax_width = max(0.02, 1.0 - cax_left - 0.04)
+        cax = self.fig.add_axes([cax_left, ax_pos.y0 + 0.10,
+                                 cax_width * 0.55, ax_pos.height * 0.7])
+        norm = Normalize(vmin=vmin, vmax=vmax, clip=False)
+        sm = ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        cbar = self.fig.colorbar(sm, cax=cax)
+        cbar.set_label(label, fontsize=10)
+        cbar.ax.tick_params(labelsize=9)
+        ticks = np.linspace(vmin, vmax, 6)
+        cbar.set_ticks(ticks)
+        cbar.set_ticklabels([f'{t:.2f}' for t in ticks])
+        self._cell_colorbar = cbar
 
     def _draw_barriers(self, barriers, color='gray'):
         dpi_fig = self.fig.dpi
@@ -620,6 +663,7 @@ def simulation_to_gif(
     scale_bar=None,         # dict {size, label, loc, ...} or None
     min_cell_px=0.0,        # min on-screen pixel width for rendered cells
     color_fn=None,          # custom (agent_id, agent_dict) -> (r, g, b)
+    cell_colorbar=None,     # {'vmin', 'vmax', 'cmap', 'label'} standalone cell colorbar
 ):
     """
     Efficient Matplotlib renderer:
@@ -720,6 +764,7 @@ def simulation_to_gif(
         env_height=env_height,
         scale_bar=scale_bar,
         min_cell_px=min_cell_px,
+        cell_colorbar=cell_colorbar,
     )
     try:
         pil_frames = [renderer.draw_frame(step, agents_key, _color, max_radius_px) for step in frames]

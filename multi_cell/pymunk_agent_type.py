@@ -24,6 +24,7 @@ _FLOAT_FIELDS = (
     'mass', 'radius', 'length', 'angle', 'inertia',
     'elasticity', 'friction',
     'adhesins',  # number of adhesin molecules — used for surface attachment
+    'inclusion_body',  # aggregate-protein mass, segregated asymmetrically at division
 )
 _TUPLE_FIELDS = ('location', 'velocity')
 _STRING_FIELDS = ('type',)
@@ -38,6 +39,7 @@ _FLOAT_DEFAULTS = {
     'elasticity': 0.0,
     'friction': 0.8,
     'adhesins': 0.0,
+    'inclusion_body': 0.0,
 }
 
 
@@ -232,15 +234,40 @@ def register_pymunk_agent_dispatches():
 
     @realize.dispatch
     def realize_pymunk_agent(core, schema: PymunkAgent, state, path=()):
-        """Fill missing fields with defaults; pass through provided values."""
+        """Fill missing fields with defaults and recursively realize any
+        embedded process specs so the framework instantiates their
+        Process classes (populating ``instance`` and registering them
+        with the scheduler).
+
+        Without this recursion, per-cell processes (``grow_divide``,
+        ``chemotaxis``, …) attached to agents added via ``_add`` at
+        division stay as raw dicts — they are found in state but never
+        run, so lineages freeze after the first division.
+        """
         if state is None:
             return schema, default_pymunk_agent(schema), []
         if not isinstance(state, dict):
             return schema, state, []
-        # Merge defaults under provided state
+
         result = default_pymunk_agent(schema)
-        result.update(state)
-        return schema, result, []
+        merges = []
+        for key, value in state.items():
+            # Embedded process specs carry ``_type: 'process'`` or an
+            # ``address``. Delegate to the generic realize(None, ...)
+            # dispatch so realize_link runs and creates the instance.
+            if (
+                isinstance(value, dict)
+                and ('_type' in value or 'address' in value)
+                and 'inputs' in value  # process specs always wire ports
+            ):
+                _, sub_state, sub_merges = realize(
+                    core, None, value, path + (key,),
+                )
+                result[key] = sub_state
+                merges += sub_merges
+            else:
+                result[key] = value
+        return schema, result, merges
 
     @check.dispatch
     def check_pymunk_agent(schema: PymunkAgent, state):

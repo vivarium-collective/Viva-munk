@@ -91,6 +91,18 @@ def _build_segment_daughters(
     d1['grow_divide'] = gd_spec_1
     d2['grow_divide'] = gd_spec_2
 
+    # Asymmetric inclusion-body segregation: the entire aggregate mass
+    # goes to daughter 0 ("old-pole" lineage); daughter 1 is rejuvenated.
+    ib_mother = float(agent.get('inclusion_body', 0.0) or 0.0)
+    d1['inclusion_body'] = ib_mother
+    d2['inclusion_body'] = 0.0
+    if 'inclusion_body_proc' in agent:
+        ib_proc = dict(agent['inclusion_body_proc'])
+        ib_proc.pop('instance', None)
+        ib_proc.setdefault('_type', 'process')
+        d1['inclusion_body_proc'] = dict(ib_proc)
+        d2['inclusion_body_proc'] = dict(ib_proc)
+
     d1_id = f"{agent_id}_0"
     d2_id = f"{agent_id}_1"
     d1['id'] = d1_id
@@ -170,7 +182,10 @@ def add_adder_grow_divide_to_agents(initial_state, agents_key='cells', config=No
 class GrowDivide(Process):
     config_schema = {
         'agents_key': {'_type': 'string', '_default': 'agents'},
-        'rate': {'_type': 'float', '_default': 0.01},
+        # Default baseline growth: ln(2)/2400 s ≈ 40 min doubling (E. coli
+        # rich-medium/minimal midpoint). Modulations (pressure, nutrient,
+        # IB burden) only slow cells down from this baseline.
+        'rate': {'_type': 'float', '_default': 0.000289},
         'threshold': {'_type': 'float', '_default': 100.0},
         'mutate': {'_type': 'boolean', '_default': False},
         'mutation_mode': {'_type': 'string', '_default': 'mult'},
@@ -314,9 +329,19 @@ class GrowDivide(Process):
                           adhesins=half_adhesins)
                 gd_cfg_1 = self._mutate_daughter_gd_config(rate, thresh, rng)
                 gd_cfg_2 = self._mutate_daughter_gd_config(rate, thresh, rng)
-                d1_gd = dict(agent.get('grow_divide', {})); d1_gd.pop('instance', None); d1_gd['config'] = gd_cfg_1
-                d2_gd = dict(agent.get('grow_divide', {})); d2_gd.pop('instance', None); d2_gd['config'] = gd_cfg_2
+                d1_gd = dict(agent.get('grow_divide', {})); d1_gd.pop('instance', None); d1_gd.setdefault('_type', 'process'); d1_gd['config'] = gd_cfg_1
+                d2_gd = dict(agent.get('grow_divide', {})); d2_gd.pop('instance', None); d2_gd.setdefault('_type', 'process'); d2_gd['config'] = gd_cfg_2
                 d1['grow_divide'] = d1_gd; d2['grow_divide'] = d2_gd
+                # Asymmetric IB segregation (see _build_segment_daughters).
+                ib_mother = float(agent.get('inclusion_body', 0.0) or 0.0)
+                d1['inclusion_body'] = ib_mother
+                d2['inclusion_body'] = 0.0
+                if 'inclusion_body_proc' in agent:
+                    ib_proc = dict(agent['inclusion_body_proc'])
+                    ib_proc.pop('instance', None)
+                    ib_proc.setdefault('_type', 'process')
+                    d1['inclusion_body_proc'] = dict(ib_proc)
+                    d2['inclusion_body_proc'] = dict(ib_proc)
                 d1_id, d2_id = f"{agent_id}_0", f"{agent_id}_1"
                 d1['id'], d2['id'] = d1_id, d2_id
             else:
@@ -325,8 +350,8 @@ class GrowDivide(Process):
                 L_d = L * (half_mass / m)
                 gd_cfg_1 = self._mutate_daughter_gd_config(rate, thresh, rng)
                 gd_cfg_2 = self._mutate_daughter_gd_config(rate, thresh, rng)
-                d1_gd = dict(agent.get('grow_divide', {})); d1_gd.pop('instance', None); d1_gd['config'] = gd_cfg_1
-                d2_gd = dict(agent.get('grow_divide', {})); d2_gd.pop('instance', None); d2_gd['config'] = gd_cfg_2
+                d1_gd = dict(agent.get('grow_divide', {})); d1_gd.pop('instance', None); d1_gd.setdefault('_type', 'process'); d1_gd['config'] = gd_cfg_1
+                d2_gd = dict(agent.get('grow_divide', {})); d2_gd.pop('instance', None); d2_gd.setdefault('_type', 'process'); d2_gd['config'] = gd_cfg_2
                 d1, d2, d1_id, d2_id = _build_segment_daughters(
                     agent, agent_id, angle, r,
                     L_d, L_d, half_mass, half_mass,
@@ -358,7 +383,9 @@ class AdderGrowDivide(Process):
     """
     config_schema = {
         'agents_key':        {'_type': 'string',  '_default': 'agents'},
-        'alpha_mean_per_h':  {'_type': 'float',   '_default': 1.5},
+        # 40 min doubling: α = ln(2) / (2/3 h) = 1.5 · ln(2) ≈ 1.04 /h.
+        # Modulations only slow growth from this baseline.
+        'alpha_mean_per_h':  {'_type': 'float',   '_default': 1.04},
         'alpha_cv':          {'_type': 'float',   '_default': 0.18},
         'delta_mean':        {'_type': 'float',   '_default': 2.6},
         'delta_cv':          {'_type': 'float',   '_default': 0.20},
@@ -484,9 +511,11 @@ class AdderGrowDivide(Process):
         slim = self._daughter_config()
         d1_gd = dict(agent.get('grow_divide', {}))
         d1_gd.pop('instance', None)
+        d1_gd.setdefault('_type', 'process')
         d1_gd['config'] = slim
         d2_gd = dict(agent.get('grow_divide', {}))
         d2_gd.pop('instance', None)
+        d2_gd.setdefault('_type', 'process')
         d2_gd['config'] = dict(slim)
 
         d1, d2, d1_id, d2_id = _build_segment_daughters(

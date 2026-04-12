@@ -62,8 +62,11 @@ def glucose_growth_document(config=None):
         agents_key='cells',
         config={
             'agents_key': 'cells',
-            'alpha_mean_per_h': 5.4,
-            'pressure_k': 1e9,  # disable pressure inhibition for this experiment
+            # 40 min baseline doubling via AdderGrowDivide default.
+            # Monod-kinetic nutrient gate only slows from here; pressure
+            # inhibition is disabled in this experiment so Monod is the
+            # sole modulator.
+            'pressure_k': 1e9,
             'nutrient_key': 'glucose',
             'nutrient_km': glucose_km,
             'nutrient_yield': nutrient_yield,

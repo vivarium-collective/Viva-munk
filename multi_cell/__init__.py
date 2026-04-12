@@ -17,11 +17,45 @@ from multi_cell.processes.pressure import Pressure
 from multi_cell.processes.diffusion_advection import DiffusionAdvection
 from multi_cell.processes.cell_field_exchange import CellFieldExchange
 from multi_cell.processes.chemotaxis import Chemotaxis
+from multi_cell.processes.inclusion_body import InclusionBody, IBColony
 from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
 from multi_cell.types import positive_types
 
 # Register custom dispatches once at module import
 register_pymunk_agent_dispatches()
+
+
+def _patch_composite_realize_on_sentinels():
+    """Ensure Composite re-realizes newly-added subtrees on `_add`/`_remove`.
+
+    `Map.apply` drops `_add` entries straight into state without calling
+    the value type's realize path, and `Composite.apply_updates` only
+    triggers `core.realize` on schema-level merges — not on structural
+    sentinels. So embedded process specs (e.g. `grow_divide` on a freshly
+    divided daughter) are never instantiated: the spec is visible in
+    state but its `'instance'` slot stays unset and the Process class
+    never runs on that cell. Result: lineages freeze after the first
+    division in every experiment that uses per-cell embedded processes.
+
+    The fix is a one-line amend: when structural sentinels are detected,
+    run `core.realize` (which follows `Link`/process specs and creates
+    instances via `realize_link`) before `find_instance_paths` scans
+    state for them.
+    """
+    _original_apply_updates = Composite.apply_updates
+
+    def apply_updates_with_realize(self, updates):
+        update_paths = _original_apply_updates(self, updates)
+        if getattr(self, '_last_apply_structural', False):
+            self.schema, self.state = self.core.realize(self.schema, self.state)
+            self.find_instance_paths(self.state)
+            self._build_view_project_cache()
+        return update_paths
+
+    Composite.apply_updates = apply_updates_with_realize
+
+
+_patch_composite_realize_on_sentinels()
 
 
 def register_pymunk_types(core):
@@ -43,6 +77,8 @@ def register_processes(core):
     core.register_link('DiffusionAdvection', DiffusionAdvection)
     core.register_link('CellFieldExchange', CellFieldExchange)
     core.register_link('Chemotaxis', Chemotaxis)
+    core.register_link('InclusionBody', InclusionBody)
+    core.register_link('IBColony', IBColony)
     core.register_link('Composite', Composite)
     core.register_link('RAMEmitter', RAMEmitter)
 

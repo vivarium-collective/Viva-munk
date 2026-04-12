@@ -14,6 +14,7 @@ from multi_cell.experiments.documents import (
     glucose_growth_document,
     attachment_document,
     chemotaxis_document,
+    inclusion_bodies_document,
 )
 
 
@@ -73,7 +74,7 @@ EXPERIMENT_REGISTRY = {
     },
     'bending_pressure': {
         'document': bending_pressure_document,
-        'time': 25200.0,  # 7 hours
+        'time': 28800.0,  # 8 hours
         'config': {
             'env_size': 30,
             'n_cells': 1,
@@ -100,7 +101,7 @@ EXPERIMENT_REGISTRY = {
     },
     'glucose_growth': {
         'document': glucose_growth_document,
-        'time': 7200.0,  # 2 hours
+        'time': 28800.0,  # 8 hours — long enough for glucose to deplete and growth to halt
         'config': {
             'env_size': 48,            # μm
             'n_bins': (16, 16),        # 3 μm per bin (each cell fits in one bin)
@@ -109,7 +110,6 @@ EXPERIMENT_REGISTRY = {
             'glucose_km': 0.5,         # mM (Monod K_s)
             'glucose_diffusion': 0.05, # μm²/s
             'nutrient_yield': 0.025,
-            'growth_rate': 0.0015,
             'field_overlay': {
                 'mol_id': 'glucose',
                 'vmin': 0.0, 'vmax': 5.0,
@@ -214,5 +214,43 @@ EXPERIMENT_REGISTRY = {
             },
         },
         'description': 'A dozen tiny non-growing cells perform memory-based run/tumble chemotaxis in a long, narrow chamber (1500 × 250 µm) with a static exponential ligand gradient (peak 20 µM at x=0, 1/e decay length 600 µm) so cells can sense the gradient even from the far right wall. Each cell maintains a one-variable smoothed memory c_memory of its local concentration (exponential moving average, τ = 3 s) and computes dc/dt_smoothed = (c_now − c_memory)/τ. Its tumble rate is λ = λ₀ · exp(−k · dc/dt_smoothed), clamped to [0.1, 5.0]/s, with λ₀ = 1.0/s and k = 2.0 s/µM. RUN: cell swims at exactly 20 µm/s in its current heading. TUMBLE: cell stops for 0.1 s and then turns by Normal(0°, 68°) relative to its current heading. PymunkProcess sets body.velocity directly each substep so the swimming speed is exact, and seeded cells swim left up the gradient.',
+    },
+    'inclusion_bodies': {
+        'document': inclusion_bodies_document,
+        'time': 36000.0,  # 10 hours post-induction
+        'config': {
+            'env_size': 40,
+            'n_cells': 1,
+            'interval': 30.0,
+            # hGH-like slow-growing IB: nucleates and grows continuously,
+            # reaching ~800 nm after 4 h and plateauing thereafter.
+            # (For asparaginase-like: set ib_max_nm=150, ib_formation_rate=0.2,
+            # ib_growth_rate=0.001 — saturates almost immediately.)
+            'ib_formation_rate': 0.05,     # nm/s nucleation seed
+            'ib_growth_rate':    0.0005,   # 1/s on existing IB
+            'ib_max_nm':         800.0,    # plateau size
+            'ib_burden_coef':    0.6,      # up to 60% growth slowdown at IB_max
+            'growth_rate_floor': 0.15,     # never below 15% of baseline µ
+            # Bending-body physics: cells are soft multi-segment capsules.
+            'n_bending_segments': 4,
+            'bending_stiffness':  14.0,
+            'bending_damping':    5.0,
+            # Mechanical-pressure feedback: rate · exp(-p / pressure_k).
+            'pressure_k':        2.5,
+            'contact_slack':     0.2,
+            'pressure_scale':    1.0,
+            'color_by_inclusion_body': True,
+            'inclusion_body_max_visual': 800.0,
+            'inclusion_body_cmap': 'plasma',
+            'inclusion_body_colorbar_label': 'IB size (nm)',
+            'inclusion_body_colorbar_width_frac': 0.14,
+            'scale_bar': {
+                'size': 10.0,
+                'label': '10 µm',
+                'loc': 'lower right',
+                'fontsize': 11,
+            },
+        },
+        'description': 'Inclusion bodies (IBs) are dense aggregates of misfolded protein that form at the cell pole during heterologous protein expression in E. coli. This experiment grows a colony for 10 h while each cell accumulates an IB (size tracked in nanometers, logistic growth toward an 800 nm plateau — hGH-like slow-growing regime). Aggregation imposes a metabolic burden that slows growth proportionally to IB size. At division the full IB goes to one daughter (old-pole lineage) while the other starts clean (new-pole), so IB-free daughters visibly out-grow their IB-laden siblings. Cells are multi-segment bending capsules, and a Pressure process adds a second mechanical slowdown as the colony packs. Cells are colored by IB size (plasma colormap, 0–800 nm).',
     },
 }

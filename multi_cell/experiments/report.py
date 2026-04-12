@@ -70,7 +70,7 @@ def _section_html(r, output_dir):
       </div>"""
 
     return f"""
-    <section>
+    <section id="{safe_id}">
       <h2>{r['name'].replace('_', ' ').title()}</h2>
       <p>{r['description']}</p>
       <table>
@@ -92,6 +92,15 @@ def generate_html_report(experiment_results, output_dir='out'):
     meta = _gather_metadata()
 
     sections = [_section_html(r, output_dir) for r in experiment_results]
+
+    nav_links = '\n'.join(
+        f'  <a href="#{r["name"].replace(" ", "_")}">{r["name"].replace("_", " ").title()}</a>'
+        for r in experiment_results
+    )
+    nav_html = f"""<nav class="experiment-nav">
+  <span class="nav-title">Experiments:</span>
+{nav_links}
+</nav>"""
 
     commit_html = ''
     if meta.get('commit'):
@@ -135,6 +144,20 @@ def generate_html_report(experiment_results, output_dir='out'):
   .meta div {{ display: inline-block; margin-right: 1.5rem; }}
   .meta code {{ background: #f0f0f0; padding: 1px 6px; border-radius: 4px; }}
   .meta a {{ color: #0366d6; text-decoration: none; }}
+  .experiment-nav {{
+    position: sticky; top: 0; z-index: 10;
+    background: #fff; border: 1px solid #ddd; border-radius: 8px;
+    padding: 0.6rem 1rem; margin: 1rem 0;
+    display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+  }}
+  .experiment-nav .nav-title {{ font-weight: 600; margin-right: 0.4rem; color: #555; }}
+  .experiment-nav a {{
+    padding: 3px 10px; border: 1px solid #ddd; border-radius: 999px;
+    background: #fafafa; color: #0366d6; text-decoration: none; font-size: 13px;
+  }}
+  .experiment-nav a:hover {{ background: #eef3fa; border-color: #b8c7dc; }}
+  section {{ scroll-margin-top: 4rem; }}
 </style>
 </head>
 <body>
@@ -144,6 +167,7 @@ def generate_html_report(experiment_results, output_dir='out'):
   <div><strong>On:</strong> {meta['generated_on']}</div>
   {commit_html}
 </div>
+{nav_html}
 {''.join(sections)}
 {_json_viewer_js()}
 </body>

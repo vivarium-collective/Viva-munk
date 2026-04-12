@@ -72,6 +72,8 @@ The current registry (`multi_cell/experiments/test_suite.py`):
 - **attachment** — adhesin-bearing cells attach to the bottom surface via PivotJoints; adhesins split between daughters at division.
 - **glucose_growth** — cells on a 2D glucose field. `DiffusionAdvection` spreads glucose, `CellFieldExchange` applies cell consumption every tick, and `GrowDivide` gates rate by Monod kinetics. Cells stop dividing once their local patch is depleted.
 - **bending_pressure** — multi-segment bending capsules grow into a colony. `Pressure` computes mechanical pressure from neighbor / wall contacts and `GrowDivide` applies `exp(-pressure / pressure_k)` inhibition. Cells visibly bend AND slow.
+- **chemotaxis** — twelve non-growing cells run/tumble up a static exponential ligand gradient in a long chamber. Each cell maintains a memory of its local concentration and modulates tumble rate as `λ = λ₀ · exp(-k · dc/dt)`.
+- **inclusion_bodies** — a colony grows while each cell accumulates an inclusion-body aggregate (size in nm, logistic growth toward an 800 nm plateau). Aggregation inhibits growth; at division the IB is transferred entirely to one daughter so the IB-free sibling out-grows the laden one. Cells are soft bending capsules and a `Pressure` step adds a second slowdown as the colony packs. Colored by IB size.
 
 `test_suite.py` runs each one, captures a GIF, a bigraph composition viz, and a serialized state JSON, and generates an HTML report (`out/report.html`) with timing, cell counts, descriptions, and embedded media.
 
