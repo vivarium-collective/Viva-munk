@@ -1,5 +1,9 @@
 # multi-cell
 
+[![PyPI version](https://img.shields.io/pypi/v/multi-cell.svg)](https://pypi.org/project/multi-cell/)
+[![Python versions](https://img.shields.io/pypi/pyversions/multi-cell.svg)](https://pypi.org/project/multi-cell/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Multi-cell simulations with 2D physics, built on [process-bigraph](https://github.com/vivarium-collective/process-bigraph) and [pymunk](https://www.pymunk.org/).
 
 ### **[Demos](https://vivarium-collective.github.io/Viva-munk/)**
@@ -10,12 +14,32 @@ Provide a composable framework for simulating populations of growing, dividing c
 
 Default parameters are calibrated to *E. coli* proportions (~1 μm wide, ~2 μm at birth, ~4 μm at division, ~30–40 min doubling time).
 
+## Installation
+
+Requires Python 3.11+.
+
+```bash
+pip install multi-cell
+```
+
+To use as a library:
+
+```python
+from multi_cell import core_import
+from process_bigraph import Composite
+
+core = core_import()  # registers multi_cell types and processes
+# ... build a spec dict and run: Composite(spec, core=core)
+```
+
 ## Quick Start
+
+Run the full experiment suite and generate the HTML report:
 
 ```bash
 git clone https://github.com/vivarium-collective/Viva-munk.git
 cd Viva-munk
-pip install -e .
+pip install -e .[dev]
 
 # Run all experiments and open the HTML report
 python -m multi_cell.experiments.test_suite
@@ -80,7 +104,17 @@ The current registry (`multi_cell/experiments/test_suite.py`):
 ## Dependencies
 
 - [process-bigraph](https://github.com/vivarium-collective/process-bigraph) — bigraph process framework
-- [bigraph-schema](https://github.com/vivarium-collective/bigraph-schema) — typed schemas
+- [bigraph-schema](https://github.com/vivarium-collective/bigraph-schema) — typed schemas (via process-bigraph)
 - [bigraph-viz](https://github.com/vivarium-collective/bigraph-viz) — bigraph visualization
 - [pymunk](https://www.pymunk.org/) — 2D physics engine
-- numpy, scipy, matplotlib, pillow
+- numpy, matplotlib, Pillow, plum-dispatch
+
+## Releasing
+
+Releases are cut from `main` via `./release.sh`, which bumps the patch
+version in `pyproject.toml`, commits + tags `vX.Y.Z`, pushes the tag, builds
+sdist + wheel, and publishes to PyPI (token at `~/.pypi-token`).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
