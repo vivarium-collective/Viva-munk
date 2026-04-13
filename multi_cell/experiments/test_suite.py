@@ -20,6 +20,8 @@ from multi_cell.experiments.documents import (
     mother_machine_document,
     biofilm_document,
     chemotaxis_document,
+    inclusion_bodies_document,
+    quorum_sensing_document,
 )
 from multi_cell.experiments.registry import EXPERIMENT_REGISTRY
 from multi_cell.experiments.runner import (
@@ -47,6 +49,8 @@ __all__ = [
     'mother_machine_document',
     'biofilm_document',
     'chemotaxis_document',
+    'inclusion_bodies_document',
+    'quorum_sensing_document',
 ]
 
 

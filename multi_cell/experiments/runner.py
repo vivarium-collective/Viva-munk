@@ -171,9 +171,33 @@ def run_experiment(name, output_dir='out', entry=None):
 
     color_by_pressure = bool(config.get('color_by_pressure', False))
     color_by_inclusion_body = bool(config.get('color_by_inclusion_body', False))
+    color_by_qs_state = bool(config.get('color_by_qs_state', False))
     color_fn = None
     cell_colorbar = None
-    if color_by_inclusion_body:
+    if color_by_qs_state:
+        # Discrete OFF / ON rendering. qs_state is a continuous Hill
+        # activation, but the receiver is essentially bistable — so we
+        # show two named states instead of a colorbar.
+        threshold = float(config.get('qs_state_threshold', 0.5))
+        off_rgb = tuple(config.get('qs_off_color', (0.25, 0.55, 0.90)))  # blue
+        on_rgb = tuple(config.get('qs_on_color', (0.95, 0.20, 0.55)))    # magenta
+        particle_rgb = (0.85, 0.85, 0.55)
+        def color_fn(aid, ent=None):
+            if aid.startswith(('eps_', 'p_')):
+                return particle_rgb
+            s = 0.0
+            if isinstance(ent, dict):
+                s = float(ent.get('qs_state', 0.0) or 0.0)
+            return on_rgb if s >= threshold else off_rgb
+        cell_colorbar = {
+            'label': config.get('qs_state_colorbar_label', 'QS state'),
+            'width_frac': float(config.get('qs_state_colorbar_width_frac', 0.12)),
+            'entries': [
+                {'label': f'OFF (s < {threshold:.1f})', 'color': off_rgb},
+                {'label': f'ON (s ≥ {threshold:.1f})', 'color': on_rgb},
+            ],
+        }
+    elif color_by_inclusion_body:
         import matplotlib.cm as _cm
         from matplotlib.colors import Normalize as _Normalize
         ib_max = float(config.get('inclusion_body_max_visual', 10.0))

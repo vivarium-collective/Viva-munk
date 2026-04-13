@@ -18,6 +18,8 @@ from multi_cell.processes.diffusion_advection import DiffusionAdvection
 from multi_cell.processes.cell_field_exchange import CellFieldExchange
 from multi_cell.processes.chemotaxis import Chemotaxis
 from multi_cell.processes.inclusion_body import InclusionBody, IBColony
+from multi_cell.processes.quorum_sensing import QuorumSensing
+from multi_cell.processes.field_decay import FieldDecay
 from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
 from multi_cell.types import positive_types
 
@@ -79,6 +81,8 @@ def register_processes(core):
     core.register_link('Chemotaxis', Chemotaxis)
     core.register_link('InclusionBody', InclusionBody)
     core.register_link('IBColony', IBColony)
+    core.register_link('QuorumSensing', QuorumSensing)
+    core.register_link('FieldDecay', FieldDecay)
     core.register_link('Composite', Composite)
     core.register_link('RAMEmitter', RAMEmitter)
 

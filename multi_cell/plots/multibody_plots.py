@@ -173,11 +173,17 @@ class GifRenderer:
         # enough to fit tick labels).
         show_field_cbar = bool(field_overlay and field_overlay.get('colorbar'))
         show_cell_cbar = bool(self.cell_colorbar_cfg)
+        # Legend-mode cell "colorbar" anchors to the data axes rather
+        # than taking a dedicated reserved column, so it doesn't add
+        # figure width.
+        cell_cbar_is_legend = bool(
+            show_cell_cbar and (self.cell_colorbar_cfg or {}).get('entries')
+        )
         cbar_width_frac = 0.0
         if show_field_cbar:
-            cbar_width_frac = float(field_overlay.get('width_frac', 0.10))
-        elif show_cell_cbar:
-            cbar_width_frac = float(self.cell_colorbar_cfg.get('width_frac', 0.10))
+            cbar_width_frac += float(field_overlay.get('width_frac', 0.10))
+        if show_cell_cbar and not cell_cbar_is_legend:
+            cbar_width_frac += float(self.cell_colorbar_cfg.get('width_frac', 0.10))
         any_cbar = show_field_cbar or show_cell_cbar
         cbar_extra = cbar_width_frac * fig_w if any_cbar else 0.0
 
@@ -234,10 +240,18 @@ class GifRenderer:
         if adhesion_surface:
             self._draw_adhesion_surface(adhesion_surface)
         self._draw_barriers(barriers)
-        if show_field_cbar:
-            self._draw_field_colorbar(field_overlay)
-        elif show_cell_cbar:
-            self._draw_cell_colorbar(self.cell_colorbar_cfg)
+        if show_field_cbar and show_cell_cbar and not cell_cbar_is_legend:
+            # Two continuous colorbars in the reserved column: field
+            # on the left half, cell on the right half.
+            self._draw_field_colorbar(field_overlay, slot=(0, 2))
+            self._draw_cell_colorbar(self.cell_colorbar_cfg, slot=(1, 2))
+        else:
+            if show_field_cbar:
+                self._draw_field_colorbar(field_overlay)
+            if show_cell_cbar:
+                # In legend mode this anchors to the data axes, so
+                # it's safe to render alongside a field colorbar.
+                self._draw_cell_colorbar(self.cell_colorbar_cfg)
         if self.scale_bar_cfg:
             self._draw_scale_bar(self.scale_bar_cfg)
 
@@ -277,14 +291,30 @@ class GifRenderer:
         replaced by set_data on the first frame; the explicit Normalize keeps
         the color scale (and the colorbar's range) locked across frames.
         """
-        from matplotlib.colors import Normalize
+        from matplotlib.colors import Normalize, PowerNorm, LogNorm
         cfg = self.field_overlay_cfg
         cmap = cfg.get('cmap', 'YlGn')
         vmin = float(cfg.get('vmin', 0.0))
         vmax = float(cfg.get('vmax', 1.0))
         alpha = float(cfg.get('alpha', 0.85))
-        # Locked normalization shared by both heatmap and colorbar.
-        self._field_overlay_norm = Normalize(vmin=vmin, vmax=vmax, clip=False)
+        # Optional nonlinear color scaling so small values stay visible
+        # when vmax is set by the peak.
+        #   norm='linear' (default) — Normalize
+        #   norm='power', gamma=0.4 — PowerNorm (compresses high end)
+        #   norm='log'              — LogNorm (vmin must be > 0)
+        norm_kind = str(cfg.get('norm', 'linear')).lower()
+        if norm_kind == 'power':
+            gamma = float(cfg.get('gamma', 0.5))
+            self._field_overlay_norm = PowerNorm(
+                gamma=gamma, vmin=vmin, vmax=vmax, clip=False,
+            )
+        elif norm_kind == 'log':
+            log_vmin = max(float(cfg.get('log_vmin', max(vmin, 1e-3))), 1e-12)
+            self._field_overlay_norm = LogNorm(
+                vmin=log_vmin, vmax=max(vmax, log_vmin * 10.0), clip=False,
+            )
+        else:
+            self._field_overlay_norm = Normalize(vmin=vmin, vmax=vmax, clip=False)
         self.field_overlay_artist = self.ax.imshow(
             np.zeros((1, 1), dtype=float),
             extent=(x0, x1, y0, y1),
@@ -390,49 +420,73 @@ class GifRenderer:
             return
         self.ax.add_line(line)
 
-    def _draw_field_colorbar(self, field_cfg):
+    def _draw_field_colorbar(self, field_cfg, slot=None):
         """Add a colorbar linked directly to the field-overlay imshow artist
-        so its range and tick labels stay locked to the artist's Normalize."""
+        so its range and tick labels stay locked to the artist's Normalize.
+
+        ``slot=(i, n)`` subdivides the reserved right-hand column into ``n``
+        equal slots and renders this colorbar in slot ``i`` (0 = leftmost).
+        """
         if self.field_overlay_artist is None:
             return
         label = field_cfg.get('colorbar_label') or field_cfg.get('mol_id') or 'concentration'
-        ax_pos = self.ax.get_position()
-        cax_left = ax_pos.x1 + 0.015
-        cax_width = max(0.02, 1.0 - cax_left - 0.04)
-        # Use most of the reserved column for the visible bar — the
-        # remainder is just enough to keep tick labels from clipping.
-        cax = self.fig.add_axes([cax_left, ax_pos.y0 + 0.10,
-                                 cax_width * 0.55, ax_pos.height * 0.7])
+        cax = self._cbar_axes(slot)
         cbar = self.fig.colorbar(self.field_overlay_artist, cax=cax)
         cbar.set_label(label, fontsize=10)
         cbar.ax.tick_params(labelsize=9)
         # Pin the tick locations so matplotlib doesn't recompute them per frame.
         vmin = float(field_cfg.get('vmin', 0.0))
         vmax = float(field_cfg.get('vmax', 1.0))
-        ticks = np.linspace(vmin, vmax, 6)
-        cbar.set_ticks(ticks)
-        cbar.set_ticklabels([f'{t:.2f}' for t in ticks])
+        norm_kind = str(field_cfg.get('norm', 'linear')).lower()
+        if norm_kind == 'log':
+            # Let matplotlib pick log-spaced major ticks automatically.
+            pass
+        else:
+            ticks = np.linspace(vmin, vmax, 6)
+            cbar.set_ticks(ticks)
+            cbar.set_ticklabels([f'{t:.2f}' for t in ticks])
         self._field_colorbar = cbar
 
-    def _draw_cell_colorbar(self, cfg):
-        """Standalone colorbar for per-cell color_fn coloring.
+    def _cbar_axes(self, slot=None):
+        """Return a colorbar axes inside the reserved right-hand column.
 
-        Unlike the field colorbar this is not linked to an imshow artist —
-        instead it's drawn from a ScalarMappable built from the same cmap
-        and range the color_fn uses, so the bar on-screen matches the
-        cell colors pixel for pixel.
+        ``slot=(i, n)`` places this colorbar in slot ``i`` of ``n`` equal
+        slots filling the column. Default: single slot spanning the column.
         """
+        ax_pos = self.ax.get_position()
+        cax_left = ax_pos.x1 + 0.015
+        cax_width = max(0.02, 1.0 - cax_left - 0.04)
+        i, n = (0, 1) if slot is None else slot
+        slot_w = cax_width / float(n)
+        left = cax_left + i * slot_w
+        return self.fig.add_axes(
+            [left, ax_pos.y0 + 0.10, slot_w * 0.55, ax_pos.height * 0.7]
+        )
+
+    def _draw_cell_colorbar(self, cfg, slot=None):
+        """Standalone colorbar (or discrete legend) for per-cell coloring.
+
+        Two modes:
+          - continuous: draws a colorbar from ``cmap``/``vmin``/``vmax``.
+          - discrete: if ``cfg['entries']`` is a list of ``{'label', 'color'}``
+            pairs, draws a matplotlib Legend with one colored swatch per
+            entry instead of a colorbar. Used when the cell coloring maps
+            to a small set of named states (e.g. OFF / ON).
+
+        ``slot`` mirrors ``_draw_field_colorbar``.
+        """
+        entries = cfg.get('entries')
+        if entries:
+            self._draw_cell_legend(cfg, slot)
+            return
+
         from matplotlib.colors import Normalize
         from matplotlib.cm import ScalarMappable
         cmap = cfg.get('cmap', 'Reds')
         vmin = float(cfg.get('vmin', 0.0))
         vmax = float(cfg.get('vmax', 1.0))
         label = cfg.get('label', 'cell value')
-        ax_pos = self.ax.get_position()
-        cax_left = ax_pos.x1 + 0.015
-        cax_width = max(0.02, 1.0 - cax_left - 0.04)
-        cax = self.fig.add_axes([cax_left, ax_pos.y0 + 0.10,
-                                 cax_width * 0.55, ax_pos.height * 0.7])
+        cax = self._cbar_axes(slot)
         norm = Normalize(vmin=vmin, vmax=vmax, clip=False)
         sm = ScalarMappable(norm=norm, cmap=cmap)
         sm.set_array([])
@@ -443,6 +497,44 @@ class GifRenderer:
         cbar.set_ticks(ticks)
         cbar.set_ticklabels([f'{t:.2f}' for t in ticks])
         self._cell_colorbar = cbar
+
+    def _draw_cell_legend(self, cfg, slot=None):
+        """Draw a discrete matplotlib legend for per-cell states.
+
+        Each entry in ``cfg['entries']`` is ``{'label': str, 'color': rgb}``.
+        Used when cells fall into a small fixed set of states (e.g. QS
+        OFF/ON) and a continuous colorbar would be misleading. The legend
+        is placed *below* the reserved colorbar column so it never
+        overlaps a field colorbar sharing the same column.
+        """
+        from matplotlib.patches import Patch
+        entries = cfg.get('entries') or []
+        handles = [
+            Patch(facecolor=e.get('color', '#888'), edgecolor='black',
+                  linewidth=0.5, label=e.get('label', ''))
+            for e in entries
+        ]
+        if not handles:
+            return
+        # Anchor the legend to the data axes and float it just outside
+        # the lower-right corner, beneath the colorbar column. This
+        # keeps it within the figure but fully clear of any colorbar.
+        title = cfg.get('label')
+        leg = self.ax.legend(
+            handles=handles,
+            loc='upper left',
+            bbox_to_anchor=(1.02, 0.12),
+            bbox_transform=self.ax.transAxes,
+            frameon=True,
+            fontsize=9,
+            title=title,
+            title_fontsize=10,
+            borderaxespad=0.0,
+            handlelength=1.4,
+            handleheight=1.2,
+            borderpad=0.5,
+        )
+        self._cell_colorbar = leg
 
     def _draw_barriers(self, barriers, color='gray'):
         dpi_fig = self.fig.dpi

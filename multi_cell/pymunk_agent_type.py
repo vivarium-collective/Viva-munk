@@ -100,6 +100,12 @@ def register_pymunk_agent_dispatches():
         if 'pressure' in update and update['pressure'] is not None:
             result['pressure'] = update['pressure']
 
+        # Quorum-sensing state (float in [0, 1]): set semantics — refreshed
+        # each tick by the QuorumSensing process from the Hill response to
+        # local autoinducer.
+        if 'qs_state' in update and update['qs_state'] is not None:
+            result['qs_state'] = update['qs_state']
+
         # local (map[mol_id -> float]): sampled field concentrations at the
         # cell. CellFieldExchange writes a fresh dict each tick (set semantics).
         if 'local' in update and update['local'] is not None:
@@ -188,6 +194,12 @@ def register_pymunk_agent_dispatches():
             v = u.get('pressure') if isinstance(u, dict) else None
             if v is not None:
                 result['pressure'] = v
+
+        # qs_state: last non-None wins
+        for u in non_none:
+            v = u.get('qs_state') if isinstance(u, dict) else None
+            if v is not None:
+                result['qs_state'] = v
 
         # local: last non-None wins (set semantics)
         for u in non_none:

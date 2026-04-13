@@ -15,6 +15,7 @@ from multi_cell.experiments.documents import (
     attachment_document,
     chemotaxis_document,
     inclusion_bodies_document,
+    quorum_sensing_document,
 )
 
 
@@ -252,5 +253,114 @@ EXPERIMENT_REGISTRY = {
             },
         },
         'description': 'Inclusion bodies (IBs) are dense aggregates of misfolded protein that form at the cell pole during heterologous protein expression in E. coli. This experiment grows a colony for 10 h while each cell accumulates an IB (size tracked in nanometers, logistic growth toward an 800 nm plateau — hGH-like slow-growing regime). Aggregation imposes a metabolic burden that slows growth proportionally to IB size. At division the full IB goes to one daughter (old-pole lineage) while the other starts clean (new-pole), so IB-free daughters visibly out-grow their IB-laden siblings. Cells are multi-segment bending capsules, and a Pressure process adds a second mechanical slowdown as the colony packs. Cells are colored by IB size (plasma colormap, 0–800 nm).',
+    },
+    'quorum_sensing': {
+        'document': quorum_sensing_document,
+        # 15-minute window. With D = 2 µm²/s the AI field takes
+        # several hundred seconds to spread across the chamber, so the
+        # off phase, the per-cluster ignition, and the build-up of the
+        # density-structured steady-state AI field all fit inside it.
+        'time': 900.0,
+        'config': {
+            # Larger chamber hosts multiple distinct colonies at varied
+            # densities and leaves empty regions between them so the AI
+            # field has a non-trivial spatial structure.
+            'env_size': 100.0,
+            # Very fine lattice: dx = 0.625 µm, just above a bacterial
+            # radius, so each cell samples roughly its own bin and local
+            # gradients resolve around individual cells.
+            'n_bins': (160, 160),
+            'interval': 1.0,
+            # Spatially heterogeneous placement: a mix of dense hotspots,
+            # medium clusters, a loose cluster, and a sparse scatter
+            # across the whole chamber. Each entry is a Gaussian
+            # (cx, cy, sigma, count); sigma=None means uniform over the
+            # full chamber (the sparse background).
+            'clusters': [
+                {'cx': 30.0, 'cy': 30.0, 'sigma': 3.5, 'count': 180},  # dense
+                {'cx': 72.0, 'cy': 30.0, 'sigma': 6.0, 'count': 110},  # medium
+                {'cx': 30.0, 'cy': 72.0, 'sigma': 7.5, 'count':  90},  # medium-loose
+                {'cx': 72.0, 'cy': 72.0, 'sigma': 12.0, 'count': 70},  # loose
+                {'cx': 50.0, 'cy': 50.0, 'sigma': None, 'count': 60},  # uniform background
+            ],
+            # Total target is the sum of counts above (~510); used only
+            # to top up if the clusters under-fill due to overlap jam.
+            'n_cells': 510,
+            # Realistic bacterial size: ~0.5 µm.
+            'cell_radius': 0.5,
+            # Autoinducer kinetics in realistic units (nM). LuxR-type
+            # receivers switch around a few nM AHL.
+            # Kinetics chosen to make activation density-dependent.
+            # With bulk decay k_bulk = 0.5/s and diffusion D = 2 µm²/s
+            # the spatial coupling length λ = √(D / k_bulk) ≈ 2 µm.
+            # An isolated cell's own AI escapes through diffusion
+            # faster than it can accumulate (D/dx² ≫ k_bulk) so
+            # single cells stay well below K; cells packed inside a
+            # cluster share each other's plumes across λ and build a
+            # local field that crosses K, igniting the cluster. The
+            # positive feedback (max = 20 vs basal = 3) keeps the
+            # ignited patch locked on.
+            'hill_k': 7.5,           # nM — switching threshold
+            'hill_n': 4.0,           # Hill coefficient — sharp switch
+            'basal_secretion': 3.0,  # nM / s at the cell bin
+            'max_secretion': 20.0,   # ~7× positive feedback when induced
+            # AHL diffusion: ~500 µm²/s in dilute water; much slower in
+            # dense biofilm / EPS matrices. We push into the slow end
+            # (2 µm²/s) so each colony stays quasi-isolated on the
+            # simulation timescale — diffusion length √(D·t) after
+            # 30 min is only ~60 µm, and the transverse timescale
+            # between clusters (~40 µm apart) is L²/D ≈ 800 s. That
+            # preserves the local density contrast instead of
+            # homogenizing the chamber.
+            'ai_diffusion': 2.0,     # µm² / s
+            'ai_init': 0.0,
+            # Open (dirichlet_ghost = 0) boundaries: the chamber is a
+            # microcolony inside a much larger AI-free reservoir, so AI
+            # that reaches the wall is lost to bulk. This is physically
+            # meaningful and avoids the neumann pathology of unbounded
+            # accumulation under constant secretion.
+            'boundary_conditions': {
+                'default': {
+                    'x': {'type': 'dirichlet_ghost', 'value': 0.0},
+                    'y': {'type': 'dirichlet_ghost', 'value': 0.0},
+                },
+            },
+            # Uniform bulk decay of AI across the whole field
+            # (FieldDecay process). Sets the spatial coupling length
+            # λ = √(D / k_bulk). With D = 2 µm²/s, k_bulk = 0.3/s
+            # gives λ ≈ 2.6 µm. Bulk (rather than cell-local) decay
+            # applies everywhere, so a dense cluster can't flood
+            # empty regions with AI above threshold — sparse cells
+            # stay OFF.
+            'bulk_decay_rate': 0.5,
+            'degradation_rate': 0.0,
+            'depth': 1.0,
+            'color_by_qs_state': True,
+            'qs_state_colorbar_label': 'QS state',
+            'qs_state_colorbar_width_frac': 0.10,
+            'qs_state_threshold': 0.5,
+            'field_overlay': {
+                'mol_id': 'ai',
+                # PowerNorm compresses the high end so low-concentration
+                # areas between colonies remain visible instead of
+                # mapping to near-white. gamma=0.4 brings faint regions
+                # well into the middle of the colormap.
+                'norm': 'power',
+                'gamma': 0.4,
+                'vmin': 0.0, 'vmax': 20.0,
+                'cmap': 'Purples',
+                'alpha': 0.65,
+                'colorbar': True,
+                'colorbar_label': 'autoinducer AI (nM)',
+                'width_frac': 0.08,
+            },
+            'scale_bar': {
+                'size': 10.0,
+                'label': '10 µm',
+                'loc': 'lower right',
+                'fontsize': 11,
+            },
+        },
+        'description': 'A 100 µm chamber seeded with ~500 non-growing circular bacteria (0.5 µm radius, E. coli / Vibrio scale) at spatially heterogeneous density: one dense hotspot, two medium clusters, a loose cluster, and a sparse uniform scatter across the whole chamber. A diffusible autoinducer (AHL-like) field lives on a fine 160×160 lattice (dx = 0.625 µm) and is updated every 1 s. Each cell secretes AI at a small basal rate (3 nM/s at its own bin) and, when the local field sampled by CellFieldExchange crosses the Hill threshold K = 7.5 nM (n = 4), ramps secretion up ~7× via positive feedback. A FieldDecay process removes AI uniformly from every bin at k = 0.5/s (bulk-abiotic hydrolysis / background lactonase), and within each cell-bin QuorumSensing applies analytic first-order decay (stable for any k·dt). Together with AI diffusion D = 2 µm²/s these set a spatial coupling length λ = √(D/k) ≈ 2 µm: cells packed tighter than λ share AI and ignite each other past quorum, whereas isolated cells (nearest-neighbor ≫ λ) see only their own plume — which decays faster than it can build above K — and stay OFF. Result: dense clusters light up while the sparse scatter stays dark. Cells are colored by a two-state legend (blue = OFF, magenta = ON at s ≥ 0.5); a purple heatmap shows the AI concentration (nM) with PowerNorm (γ = 0.4) so faint inter-colony signal is visible alongside the bright cluster peaks.',
     },
 }

@@ -12,6 +12,7 @@ from multi_cell.experiments.documents.mother_machine import mother_machine_docum
 from multi_cell.experiments.documents.biofilm import biofilm_document
 from multi_cell.experiments.documents.chemotaxis import chemotaxis_document
 from multi_cell.experiments.documents.inclusion_bodies import inclusion_bodies_document
+from multi_cell.experiments.documents.quorum_sensing import quorum_sensing_document
 
 __all__ = [
     'daughter_machine_document',
@@ -22,4 +23,5 @@ __all__ = [
     'biofilm_document',
     'chemotaxis_document',
     'inclusion_bodies_document',
+    'quorum_sensing_document',
 ]
