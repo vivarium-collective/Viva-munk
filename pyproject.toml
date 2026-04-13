@@ -1,23 +1,46 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "multi-cell"
-version = "0.0.1"
+version = "0.0.0"
 description = "multi-cell simulations with pymunk 2d physics"
 readme = "README.md"
-requires-python = ">=3.7"
+license = { text = "MIT" }
+requires-python = ">=3.11"
 authors = [
-  {name = "Eran Agmon"},
-  {name = "Ryan Spangler"}
+  {name = "Eran Agmon", email = "agmon.eran@gmail.com"},
+  {name = "Ryan Spangler"},
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
 ]
 dependencies = [
     "process-bigraph",
     "bigraph-viz",
     "pymunk",
+    "numpy",
+    "matplotlib",
+    "Pillow",
+    "plum-dispatch",
+]
 
+[project.optional-dependencies]
+dev = [
     "pytest",
     "ipdb",
-    "setuptools",
+    "build",
     "twine>=4.0.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/vivarium-collective/Viva-munk"
+Repository = "https://github.com/vivarium-collective/Viva-munk"
 
 [tool.setuptools]
 packages = [
@@ -25,4 +48,5 @@ packages = [
     "multi_cell.processes",
     "multi_cell.experiments",
     "multi_cell.plots",
+    "multi_cell.types",
 ]

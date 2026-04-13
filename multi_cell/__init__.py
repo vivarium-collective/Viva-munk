@@ -2,6 +2,8 @@
 Registration-related functions
 """
 
+__version__ = "0.0.1"
+
 from process_bigraph import register_types as pb_register_types
 from process_bigraph.types.process import register_types as pb_types_register
 from process_bigraph.composite import Composite
