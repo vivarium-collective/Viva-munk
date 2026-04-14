@@ -157,10 +157,21 @@ def _derive_gif_options(document, config, env_size):
     if ylim is None and 'channel_height' in config:
         ylim = (-0.5, config['channel_height'] + 2.0)
 
-    # Auto-derive flow regions from any RemoveCrossing step in the document
+    # Auto-derive flow regions from any RemoveCrossing step in the document.
+    # `address` can be either the live-document string form
+    # ('local:RemoveCrossing') or the serialized dict form
+    # ({'protocol': 'local', 'data': 'RemoveCrossing'}) when rebuilding from
+    # a saved composite_config.
+    def _is_remove_crossing(addr):
+        if addr == 'local:RemoveCrossing':
+            return True
+        if isinstance(addr, dict):
+            return addr.get('protocol') == 'local' and addr.get('data') == 'RemoveCrossing'
+        return False
+
     flow_regions = []
     for val in document.values():
-        if isinstance(val, dict) and val.get('address') == 'local:RemoveCrossing':
+        if isinstance(val, dict) and _is_remove_crossing(val.get('address')):
             rc_cfg = val.get('config', {})
             region = {}
             if rc_cfg.get('x_max') is not None:
