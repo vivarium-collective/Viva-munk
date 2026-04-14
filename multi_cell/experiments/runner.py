@@ -209,16 +209,24 @@ def run_experiment(name, output_dir='out', entry=None):
     simulation_id = str(uuid.uuid4())
     if 'emitter' in document:
         wires = document['emitter'].get('inputs', {})
+        emitter_config = {
+            'emit': {port: 'node' for port in wires},
+            'file_path': output_dir,
+            'db_file': DB_FILE,
+            'simulation_id': simulation_id,
+            'name': name,
+        }
+        # Optional: thin out high-frequency emitters (e.g. chemotaxis runs the
+        # composite every 0.1s; writing every tick floods the db with ~36k
+        # rows). entry['emitter_subsample']=N keeps 1 of every N ticks; the
+        # stored `step` column retains the real composite tick number.
+        subsample = entry.get('emitter_subsample')
+        if subsample:
+            emitter_config['subsample'] = int(subsample)
         document['emitter'] = {
             '_type': 'step',
             'address': 'local:SQLiteEmitter',
-            'config': {
-                'emit': {port: 'node' for port in wires},
-                'file_path': output_dir,
-                'db_file': DB_FILE,
-                'simulation_id': simulation_id,
-                'name': name,
-            },
+            'config': emitter_config,
             'inputs': wires,
         }
 
