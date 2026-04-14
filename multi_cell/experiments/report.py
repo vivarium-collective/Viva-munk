@@ -73,13 +73,17 @@ def _section_html(r, output_dir):
     sim_id_row = ''
     if sim_id:
         tip = (
-            'Primary key of this run in out/history.db on the machine that '
-            'generated the report. Click to copy. See "How to reproduce" at '
-            'the end of this report for how to access the underlying data.'
+            'Primary key of this run in <code>out/history.db</code> on the '
+            'machine that generated this report. Click to copy. See '
+            '<a href="#reproduce">How to reproduce</a> for how to access '
+            'the underlying data.'
         )
         sim_id_row = (
             f'<tr><td>Simulation ID</td>'
-            f'<td><code class="sim-id" title="{tip}">{sim_id}</code></td>'
+            f'<td><span class="sim-id-wrap">'
+            f'<code class="sim-id">{sim_id}</code>'
+            f'<span class="sim-id-tip">{tip}</span>'
+            f'</span></td>'
             f'</tr>'
         )
 
@@ -283,9 +287,20 @@ def generate_html_report(experiment_results, output_dir='out'):
   }}
   .experiment-nav a:hover {{ background: #eef3fa; border-color: #b8c7dc; }}
   section {{ scroll-margin-top: 4rem; }}
+  .sim-id-wrap {{ position: relative; display: inline-block; }}
   .sim-id {{ background: #f0f0f0; padding: 2px 8px; border-radius: 4px; cursor: copy; user-select: all; font-size: 12px; }}
   .sim-id:hover {{ background: #e4ecf7; }}
   .sim-id.copied {{ background: #d4edda; }}
+  .sim-id-tip {{
+    visibility: hidden; opacity: 0; transition: opacity 0.15s;
+    position: absolute; left: 0; top: calc(100% + 6px); z-index: 20;
+    background: #222; color: #f5f5f5; padding: 8px 10px; border-radius: 6px;
+    font-size: 11px; line-height: 1.4; max-width: 360px; width: max-content;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  }}
+  .sim-id-tip code {{ background: rgba(255,255,255,0.12); padding: 0 4px; border-radius: 3px; }}
+  .sim-id-tip a {{ color: #8ab4ff; text-decoration: underline; }}
+  .sim-id-wrap:hover .sim-id-tip {{ visibility: visible; opacity: 1; }}
   .replay-hint {{ margin-top: 6px; font-size: 11px; color: #555; }}
   .replay-hint code {{ background: #f8f8f8; padding: 1px 6px; border-radius: 3px; }}
   .replay-hint strong {{ display: block; margin-top: 6px; color: #333; font-size: 11px; }}
