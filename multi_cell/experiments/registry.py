@@ -207,15 +207,9 @@ EXPERIMENT_REGISTRY = {
                 'loc': 'lower right',
                 'fontsize': 12,
             },
-            'field_overlay': {
-                'mol_id': 'glucose',
-                'vmin': 0.0,
-                'vmax': 20.0,
-                'cmap': 'Greens',
-                'alpha': 0.35,
-                'colorbar': True,
-                'colorbar_label': 'attractant (µM)',
-            },
+            # The ligand field is static — no point paying the per-tick
+            # emit cost. It's recoverable from composite_config if a future
+            # change wants to re-enable a one-shot background overlay.
         },
         'description': 'A dozen tiny non-growing cells perform memory-based run/tumble chemotaxis in a long, narrow chamber (1500 × 250 µm) with a static exponential ligand gradient (peak 20 µM at x=0, 1/e decay length 600 µm) so cells can sense the gradient even from the far right wall. Each cell maintains a one-variable smoothed memory c_memory of its local concentration (exponential moving average, τ = 3 s) and computes dc/dt_smoothed = (c_now − c_memory)/τ. Its tumble rate is λ = λ₀ · exp(−k · dc/dt_smoothed), clamped to [0.1, 5.0]/s, with λ₀ = 1.0/s and k = 2.0 s/µM. RUN: cell swims at exactly 20 µm/s in its current heading. TUMBLE: cell stops for 0.1 s and then turns by Normal(0°, 68°) relative to its current heading. PymunkProcess sets body.velocity directly each substep so the swimming speed is exact, and seeded cells swim left up the gradient.',
     },

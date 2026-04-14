@@ -215,11 +215,16 @@ def run_experiment(name, output_dir='out', entry=None):
             'db_file': DB_FILE,
             'simulation_id': simulation_id,
             'name': name,
+            # Batch 100 INSERTs per transaction so the per-row fsync cost
+            # is amortized. Safe for all experiments — the emitter flushes
+            # on close() and query(), so nothing is lost at shutdown.
+            'batch_size': int(entry.get('emitter_batch_size', 100)),
         }
-        # Optional: thin out high-frequency emitters (e.g. chemotaxis runs the
-        # composite every 0.1s; writing every tick floods the db with ~36k
-        # rows). entry['emitter_subsample']=N keeps 1 of every N ticks; the
-        # stored `step` column retains the real composite tick number.
+        # Optional: thin out high-frequency emitters (e.g. chemotaxis runs
+        # the composite every 0.1s; writing every tick floods the db with
+        # ~36k rows). `entry['emitter_subsample']=N` keeps 1 of every N
+        # ticks; the stored `step` column retains the real composite tick
+        # number so time-series analysis stays correct.
         subsample = entry.get('emitter_subsample')
         if subsample:
             emitter_config['subsample'] = int(subsample)
