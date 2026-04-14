@@ -69,11 +69,37 @@ def _section_html(r, output_dir):
         </script>
       </div>"""
 
+    sim_id = r.get('simulation_id')
+    sim_id_row = ''
+    if sim_id:
+        tip = (
+            'Primary key of this run in <code>out/history.db</code> on the '
+            'machine that generated this report. Click to copy. See '
+            '<a href="#reproduce">How to reproduce</a> for how to access '
+            'the underlying data.'
+        )
+        sim_id_row = (
+            f'<tr><td>Simulation ID</td>'
+            f'<td><span class="sim-id-wrap">'
+            f'<code class="sim-id">{sim_id}</code>'
+            f'<span class="sim-id-tip">{tip}</span>'
+            f'</span></td>'
+            f'</tr>'
+        )
+
+    cached = bool(r.get('cached'))
+    badge = (
+        '<span class="badge badge-cached" title="Rebuilt from existing rows in history.db — no simulation re-run">cached</span>'
+        if cached else
+        '<span class="badge badge-fresh" title="Simulation was executed fresh for this report">fresh</span>'
+    )
+
     return f"""
     <section id="{safe_id}">
-      <h2>{r['name'].replace('_', ' ').title()}</h2>
+      <h2>{r['name'].replace('_', ' ').title()} {badge}</h2>
       <p>{r['description']}</p>
       <table>
+        {sim_id_row}
         <tr><td>Simulation time</td><td>{r['total_time']:.1f}s ({r['total_time']/3600:.1f} hours)</td></tr>
         <tr><td>Steps emitted</td><td>{r['n_steps']}</td></tr>
         <tr><td>Final cells</td><td>{r['n_cells']}</td></tr>
@@ -83,6 +109,107 @@ def _section_html(r, output_dir):
       <h3>Simulation</h3>
       <img src="{gif_rel}" alt="{r['name']}" />{viz_html}{json_html}
     </section>"""
+
+
+def _summary_html(experiment_results):
+    """Render the end-of-report summary: per-experiment + total runtimes."""
+    if not experiment_results:
+        return ''
+
+    rows = []
+    total_wall = 0.0
+    total_sim = 0.0
+    for r in experiment_results:
+        wall = float(r.get('elapsed') or 0.0)
+        sim_t = float(r.get('total_time') or 0.0)
+        total_wall += wall
+        total_sim += sim_t
+        cached = bool(r.get('cached'))
+        badge = (
+            '<span class="badge badge-cached">cached</span>'
+            if cached else
+            '<span class="badge badge-fresh">fresh</span>'
+        )
+        short_id = (r.get('simulation_id') or '')[:8] or '—'
+        name_href = r['name'].replace(' ', '_')
+        if wall > 0:
+            wall_tip = ' title="wall-clock time of the original simulation run (recorded in history.db)"' if cached else ''
+            wall_cell = f'<span{wall_tip}>{wall:.1f}s</span>'
+        else:
+            wall_cell = '—'
+        rows.append(
+            f'<tr>'
+            f'<td><a href="#{name_href}">{r["name"].replace("_", " ").title()}</a></td>'
+            f'<td>{badge}</td>'
+            f'<td><code>{short_id}</code></td>'
+            f'<td>{r.get("n_steps", "—")}</td>'
+            f'<td>{sim_t/3600:.2f} h</td>'
+            f'<td>{wall_cell}</td>'
+            f'</tr>'
+        )
+
+    fresh_count = sum(1 for r in experiment_results if not r.get('cached'))
+    cached_count = len(experiment_results) - fresh_count
+
+    footer = (
+        f'<tr><td colspan="2">Totals</td>'
+        f'<td colspan="2">{len(experiment_results)} experiments '
+        f'({fresh_count} fresh, {cached_count} cached)</td>'
+        f'<td>{total_sim/3600:.2f} h sim</td>'
+        f'<td>{total_wall:.1f}s wall</td></tr>'
+    )
+
+    return f"""
+<section class="summary" id="summary">
+  <h2>Run Summary</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Experiment</th>
+        <th>Source</th>
+        <th>Sim ID</th>
+        <th>Steps</th>
+        <th>Sim time</th>
+        <th>Wall-clock</th>
+      </tr>
+    </thead>
+    <tbody>
+      {''.join(rows)}
+    </tbody>
+    <tfoot>{footer}</tfoot>
+  </table>
+  <p style="margin-top:0.8rem; font-size:12px; color:#666;">
+    <strong>fresh</strong> = simulation executed for this report.
+    <strong>cached</strong> = rebuilt from existing rows in <code>history.db</code>; no simulation re-run. Wall-clock for cached rows shows the original run's recorded duration.
+  </p>
+</section>"""
+
+
+def _reproduce_html(meta):
+    """End-of-report block with short instructions for re-running the
+    experiments and accessing the recorded data on another machine."""
+    commit = (meta.get('commit') or '')[:8] or 'main'
+    return f"""
+<section class="reproduce" id="reproduce">
+  <h2>How to reproduce</h2>
+  <p>The simulation IDs shown above identify runs in a SQLite database on the machine that generated this report (<code>out/history.db</code>). Viewers reading this report online will not have that file — to get the underlying data you need to re-run the experiments yourself.</p>
+  <h3>Re-run locally</h3>
+  <pre class="snippet">git clone https://github.com/vivarium-collective/Viva-munk
+cd Viva-munk
+git checkout {commit}
+pip install -e .
+python -m multi_cell.experiments.test_suite</pre>
+  <p style="font-size:12px;color:#666;">This records every run into <code>out/history.db</code> and regenerates an HTML report at <code>out/report.html</code>.</p>
+  <h3>Access a run's data in Python</h3>
+  <pre class="snippet">from process_bigraph.emitter import load_history, load_simulation_metadata
+
+# Replace with any simulation_id from the summary table above.
+sim_id  = '&lt;simulation_id&gt;'
+history = load_history('out/history.db', sim_id)          # list of per-step dicts
+meta    = load_simulation_metadata('out/history.db', sim_id)  # config + provenance</pre>
+  <h3>Re-render a GIF from recorded history (no re-run)</h3>
+  <pre class="snippet">python -m multi_cell.experiments.replay &lt;simulation_id&gt;</pre>
+</section>"""
 
 
 def generate_html_report(experiment_results, output_dir='out'):
@@ -100,6 +227,8 @@ def generate_html_report(experiment_results, output_dir='out'):
     nav_html = f"""<nav class="experiment-nav">
   <span class="nav-title">Experiments:</span>
 {nav_links}
+  <a href="#summary">Summary</a>
+  <a href="#reproduce">How to reproduce</a>
 </nav>"""
 
     commit_html = ''
@@ -158,6 +287,38 @@ def generate_html_report(experiment_results, output_dir='out'):
   }}
   .experiment-nav a:hover {{ background: #eef3fa; border-color: #b8c7dc; }}
   section {{ scroll-margin-top: 4rem; }}
+  .sim-id-wrap {{ position: relative; display: inline-block; }}
+  .sim-id {{ background: #f0f0f0; padding: 2px 8px; border-radius: 4px; cursor: copy; user-select: all; font-size: 12px; }}
+  .sim-id:hover {{ background: #e4ecf7; }}
+  .sim-id.copied {{ background: #d4edda; }}
+  .sim-id-tip {{
+    visibility: hidden; opacity: 0; transition: opacity 0.15s;
+    position: absolute; left: 0; top: calc(100% + 6px); z-index: 20;
+    background: #222; color: #f5f5f5; padding: 8px 10px; border-radius: 6px;
+    font-size: 11px; line-height: 1.4; max-width: 360px; width: max-content;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  }}
+  .sim-id-tip code {{ background: rgba(255,255,255,0.12); padding: 0 4px; border-radius: 3px; }}
+  .sim-id-tip a {{ color: #8ab4ff; text-decoration: underline; }}
+  .sim-id-wrap:hover .sim-id-tip {{ visibility: visible; opacity: 1; }}
+  .replay-hint {{ margin-top: 6px; font-size: 11px; color: #555; }}
+  .replay-hint code {{ background: #f8f8f8; padding: 1px 6px; border-radius: 3px; }}
+  .replay-hint strong {{ display: block; margin-top: 6px; color: #333; font-size: 11px; }}
+  .snippet {{ background: #f8f8f8; border: 1px solid #eee; border-radius: 4px; padding: 6px 10px; margin: 3px 0 6px 0; font-family: ui-monospace, monospace; font-size: 11px; overflow-x: auto; user-select: all; }}
+  .badge {{ display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }}
+  .badge-fresh  {{ background: #e8f4ff; color: #0b61a4; border: 1px solid #b8d8f0; }}
+  .badge-cached {{ background: #fff6d6; color: #8a6d00; border: 1px solid #ead58a; }}
+  .summary {{ background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1.2rem 1.5rem; margin-top: 2rem; }}
+  .summary h2 {{ margin-top: 0; }}
+  .summary table {{ width: 100%; }}
+  .summary td, .summary th {{ padding: 0.3rem 0.6rem; border: 1px solid #eee; text-align: left; }}
+  .summary th {{ background: #f8f8f8; }}
+  .summary tfoot td {{ font-weight: 600; background: #fafafa; }}
+  .reproduce {{ background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1.2rem 1.5rem; margin-top: 1.5rem; }}
+  .reproduce h2 {{ margin-top: 0; }}
+  .reproduce h3 {{ margin-top: 1.2rem; margin-bottom: 0.3rem; font-size: 14px; }}
+  .reproduce pre.snippet {{ background: #f6f8fa; border: 1px solid #e4e4e4; border-radius: 6px; padding: 10px 12px; margin: 0; font-family: ui-monospace, monospace; font-size: 12px; overflow-x: auto; }}
+  .reproduce p {{ font-size: 13px; color: #444; margin: 0.4rem 0; }}
 </style>
 </head>
 <body>
@@ -169,7 +330,20 @@ def generate_html_report(experiment_results, output_dir='out'):
 </div>
 {nav_html}
 {''.join(sections)}
+{_summary_html(experiment_results)}
+{_reproduce_html(meta)}
 {_json_viewer_js()}
+<script>
+document.querySelectorAll('.sim-id').forEach(el => {{
+  el.addEventListener('click', async () => {{
+    try {{
+      await navigator.clipboard.writeText(el.textContent);
+      el.classList.add('copied');
+      setTimeout(() => el.classList.remove('copied'), 900);
+    }} catch (e) {{}}
+  }});
+}});
+</script>
 </body>
 </html>"""
 

@@ -161,9 +161,13 @@ def chemotaxis_document(config=None):
             fields_key='fields',
             interval=interval,
         ),
+        # Emit only what the GIF needs: per-cell location/length/radius
+        # (via the cells subtree) plus global_time. The ligand field is
+        # static (no DiffusionAdvection process updates it), so there's no
+        # point paying to encode 15,000 floats per recorded tick — it's
+        # reconstructed once in composite_config and never changes.
         'emitter': emitter_from_wires({
             'agents': ['cells'],
-            'fields': ['fields'],
             'time': ['global_time'],
         }),
     }

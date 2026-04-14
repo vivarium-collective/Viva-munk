@@ -148,6 +148,9 @@ EXPERIMENT_REGISTRY = {
     'chemotaxis': {
         'document': chemotaxis_document,
         'time': 3600.0,  # 60 minutes
+        # interval=0.1s over 3600s = 36k emitter ticks; thin to ~3.6k rows.
+        # The stored `step` column preserves the real composite tick number.
+        'emitter_subsample': 10,
         'config': {
             'env_width': 1500.0,        # µm — long axis
             'env_height': 250.0,        # µm — short axis (6:1 aspect)
@@ -204,6 +207,10 @@ EXPERIMENT_REGISTRY = {
                 'loc': 'lower right',
                 'fontsize': 12,
             },
+            # The ligand field is static. The document does not wire it
+            # through the emitter (no point writing 15k floats per tick);
+            # the runner instead pulls it once from composite_config and
+            # stamps every rendered frame so the background overlay works.
             'field_overlay': {
                 'mol_id': 'glucose',
                 'vmin': 0.0,

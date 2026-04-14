@@ -2,14 +2,69 @@
 GIF/viz/JSON, and returns a result dict that the report can render."""
 import json
 import os
+import platform
+import socket
+import subprocess
+import sys
 import time
+import uuid
 
 from bigraph_viz import plot_bigraph
 from process_bigraph import Composite, gather_emitter_results
+from process_bigraph.emitter import (
+    save_simulation_metadata,
+    mark_simulation_finished,
+)
 
 from multi_cell import core_import
 from multi_cell.experiments.registry import EXPERIMENT_REGISTRY
 from multi_cell.plots.multibody_plots import simulation_to_gif
+
+
+# Single shared DB file under out/ so every experiment run is recorded and
+# can be replayed later via multi_cell.experiments.replay.
+DB_FILE = 'history.db'
+
+
+def _git_commit_info():
+    """Return (sha, dirty) for the viva-munk working tree, or (None, None)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        sha = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=here, stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        return None, None
+    try:
+        status = subprocess.check_output(
+            ['git', 'status', '--porcelain'], cwd=here, stderr=subprocess.DEVNULL
+        ).decode().strip()
+        dirty = bool(status)
+    except Exception:
+        dirty = None
+    return sha, dirty
+
+
+def _process_bigraph_version():
+    try:
+        import process_bigraph as _pb
+        return getattr(_pb, '__version__', None)
+    except Exception:
+        return None
+
+
+def _reproducibility_info():
+    """Collect host/version/git info attached to every run for later replay."""
+    sha, dirty = _git_commit_info()
+    return {
+        'hostname':             socket.gethostname(),
+        'python_version':       sys.version.split()[0],
+        'platform':             platform.platform(),
+        'process_bigraph_version': _process_bigraph_version(),
+        'git_commit':           sha,
+        'git_dirty':            dirty,
+        'started_wall_time':    time.time(),
+    }
 
 
 # Single core per process. Each parallel worker re-imports this module and
@@ -102,10 +157,21 @@ def _derive_gif_options(document, config, env_size):
     if ylim is None and 'channel_height' in config:
         ylim = (-0.5, config['channel_height'] + 2.0)
 
-    # Auto-derive flow regions from any RemoveCrossing step in the document
+    # Auto-derive flow regions from any RemoveCrossing step in the document.
+    # `address` can be either the live-document string form
+    # ('local:RemoveCrossing') or the serialized dict form
+    # ({'protocol': 'local', 'data': 'RemoveCrossing'}) when rebuilding from
+    # a saved composite_config.
+    def _is_remove_crossing(addr):
+        if addr == 'local:RemoveCrossing':
+            return True
+        if isinstance(addr, dict):
+            return addr.get('protocol') == 'local' and addr.get('data') == 'RemoveCrossing'
+        return False
+
     flow_regions = []
     for val in document.values():
-        if isinstance(val, dict) and val.get('address') == 'local:RemoveCrossing':
+        if isinstance(val, dict) and _is_remove_crossing(val.get('address')):
             rc_cfg = val.get('config', {})
             region = {}
             if rc_cfg.get('x_max') is not None:
@@ -146,15 +212,68 @@ def run_experiment(name, output_dir='out', entry=None):
 
     core = PYMUNK_CORE
     document = doc_fn(config)
+
+    # Swap the document's default (RAM) emitter for a SQLiteEmitter so every
+    # experiment run is persisted under a unique simulation_id. The document's
+    # wire mapping (agents/particles/time) is preserved — we only rewrite the
+    # address and config.
+    simulation_id = str(uuid.uuid4())
+    if 'emitter' in document:
+        wires = document['emitter'].get('inputs', {})
+        emitter_config = {
+            'emit': {port: 'node' for port in wires},
+            'file_path': output_dir,
+            'db_file': DB_FILE,
+            'simulation_id': simulation_id,
+            'name': name,
+            # Batch 100 INSERTs per transaction so the per-row fsync cost
+            # is amortized. Safe for all experiments — the emitter flushes
+            # on close() and query(), so nothing is lost at shutdown.
+            'batch_size': int(entry.get('emitter_batch_size', 100)),
+        }
+        # Optional: thin out high-frequency emitters (e.g. chemotaxis runs
+        # the composite every 0.1s; writing every tick floods the db with
+        # ~36k rows). `entry['emitter_subsample']=N` keeps 1 of every N
+        # ticks; the stored `step` column retains the real composite tick
+        # number so time-series analysis stays correct.
+        subsample = entry.get('emitter_subsample')
+        if subsample:
+            emitter_config['subsample'] = int(subsample)
+        document['emitter'] = {
+            '_type': 'step',
+            'address': 'local:SQLiteEmitter',
+            'config': emitter_config,
+            'inputs': wires,
+        }
+
     sim = Composite({'state': document}, core=core)
 
     viz_path = _save_bigraph_viz(core, sim, name, output_dir)
     serialized = _serialize_state(core, sim)
 
+    # Record the composite config + run metadata so the run can be replayed
+    # long after the process ends. We store the serialized state since it's
+    # JSON-safe (live process objects are not).
+    db_path = os.path.join(output_dir, DB_FILE)
+    run_metadata = {
+        'experiment_name': name,
+        'total_time':      total_time,
+        'config':          config,
+        'description':     entry.get('description', ''),
+        'reproducibility': _reproducibility_info(),
+    }
+    save_simulation_metadata(
+        db_path, simulation_id,
+        composite_config=serialized, metadata=run_metadata, name=name,
+    )
+    print(f'  simulation_id: {simulation_id}')
+    print(f'  db: {db_path}')
+
     t0 = time.time()
     sim.run(total_time)
     elapsed = time.time() - t0
     results = gather_emitter_results(sim)[('emitter',)]
+    mark_simulation_finished(db_path, simulation_id, elapsed_seconds=elapsed)
     print(f'Completed in {elapsed:.1f}s — {len(results)} steps')
 
     last = results[-1]
@@ -162,7 +281,111 @@ def run_experiment(name, output_dir='out', entry=None):
     n_particles = len(last.get('particles', {}))
     print(f'Final state: {n_cells} cells, {n_particles} particles')
 
-    # Generate GIF — target ~150 frames
+    gif_path = render_gif(name, results, document, config, output_dir, env_size)
+    print(f'GIF: {gif_path}')
+
+    return _build_result_dict(
+        name, simulation_id, db_path, gif_path, viz_path,
+        serialized, elapsed, results, n_cells, n_particles,
+        total_time, entry, cached=False,
+    )
+
+
+def load_cached_experiment(name, output_dir='out', entry=None, simulation_id=None):
+    """Rebuild an experiment's result dict from SQLite history without re-running.
+
+    Picks the most recent recorded run of ``name`` in ``history.db`` unless a
+    specific ``simulation_id`` is given. The GIF is re-rendered from the
+    recorded history (the simulation is not re-run). Returns None if no
+    matching run exists.
+    """
+    from process_bigraph.emitter import (
+        list_simulations, load_history, load_simulation_metadata,
+    )
+
+    if entry is None:
+        entry = EXPERIMENT_REGISTRY.get(name, {})
+    config = entry.get('config', {})
+    env_size = config.get('env_size', 600)
+
+    db_path = os.path.join(output_dir, DB_FILE)
+    if not os.path.exists(db_path):
+        return None
+
+    candidates = [
+        s for s in list_simulations(db_path)
+        if (simulation_id and s['simulation_id'] == simulation_id)
+           or (not simulation_id and s.get('name') == name)
+    ]
+    if not candidates:
+        return None
+    chosen = candidates[0]  # list_simulations returns newest-first
+    sid = chosen['simulation_id']
+
+    meta = load_simulation_metadata(db_path, sid) or {}
+    run_meta = meta.get('metadata') or {}
+    results = load_history(db_path, sid)
+    if not results:
+        return None
+
+    last = results[-1]
+    n_cells = len(last.get('agents', {}))
+    n_particles = len(last.get('particles', {}))
+
+    gif_path = render_gif(name, results, meta.get('composite_config') or {},
+                          config, output_dir, env_size)
+
+    # Prefer existing viz png if the original run saved one
+    viz_path_png = os.path.join(output_dir, f'{name}_viz.png')
+    viz_path_base = viz_path_png[:-4] if os.path.exists(viz_path_png) else None
+
+    return _build_result_dict(
+        name, sid, db_path, gif_path, viz_path_base,
+        meta.get('composite_config'),
+        meta.get('elapsed_seconds') or run_meta.get('elapsed_seconds') or 0.0,
+        results, n_cells, n_particles,
+        run_meta.get('total_time') or entry.get('time', 0.0),
+        entry, cached=True,
+    )
+
+
+def _build_result_dict(name, simulation_id, db_path, gif_path, viz_path,
+                       serialized, elapsed, results, n_cells, n_particles,
+                       total_time, entry, cached=False):
+    return {
+        'name': name,
+        'simulation_id': simulation_id,
+        'db_path': db_path,
+        'gif_path': gif_path,
+        'viz_path': f'{viz_path}.png' if viz_path else None,
+        'state_json': serialized,
+        'elapsed': elapsed,
+        'n_steps': len(results),
+        'n_cells': n_cells,
+        'n_particles': n_particles,
+        'total_time': total_time,
+        'description': entry.get('description', '') if entry else '',
+        'cached': cached,
+    }
+
+
+def render_gif(name, results, document, config, output_dir, env_size):
+    '''Render a ~150-frame GIF for a single run.
+
+    Pure function over (results, document, config) so it can be driven from
+    either a live simulation or a replay reading history back from SQLite.
+    '''
+    # Static fields (e.g. the chemotaxis ligand gradient) are intentionally
+    # not emitted per-tick — they'd balloon the history with identical
+    # copies of a 15k-float array. Stamp the initial field from the
+    # document/composite_config onto every frame that lacks one so the GIF
+    # renderer's field_overlay still paints its background.
+    static_fields = document.get('fields') if isinstance(document, dict) else None
+    if static_fields:
+        for step in results:
+            if isinstance(step, dict) and not step.get('fields'):
+                step['fields'] = static_fields
+
     gif_config, xlim, ylim, flow_regions, adhesion_surface = _derive_gif_options(
         document, config, env_size,
     )
@@ -262,17 +485,4 @@ def run_experiment(name, output_dir='out', entry=None):
         min_cell_px=min_cell_px,
         cell_colorbar=cell_colorbar,
     )
-    print(f'GIF: {gif_path}')
-
-    return {
-        'name': name,
-        'gif_path': gif_path,
-        'viz_path': f'{viz_path}.png' if viz_path else None,
-        'state_json': serialized,
-        'elapsed': elapsed,
-        'n_steps': len(results),
-        'n_cells': n_cells,
-        'n_particles': n_particles,
-        'total_time': total_time,
-        'description': entry.get('description', ''),
-    }
+    return gif_path
