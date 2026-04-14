@@ -12,7 +12,7 @@ import os
 import time
 
 from multi_cell.experiments.registry import EXPERIMENT_REGISTRY
-from multi_cell.experiments.runner import run_experiment
+from multi_cell.experiments.runner import run_experiment, load_cached_experiment
 from multi_cell.experiments.report import generate_html_report
 
 
@@ -24,6 +24,17 @@ def _run_one_in_subprocess(name_and_output):
     # Force matplotlib non-interactive backend in subprocesses.
     import matplotlib
     matplotlib.use('Agg', force=True)
+    return run_experiment(name, output_dir=output_dir)
+
+
+def _load_or_run(name, output_dir, from_cache):
+    """Load the most recent cached run for ``name`` if ``from_cache`` is set
+    and a matching entry exists; otherwise run the experiment fresh."""
+    if from_cache:
+        cached = load_cached_experiment(name, output_dir=output_dir)
+        if cached is not None:
+            return cached
+        print(f'  ! {name}: no cached run in history.db — running fresh', flush=True)
     return run_experiment(name, output_dir=output_dir)
 
 
@@ -46,11 +57,17 @@ def main():
         '--workers', type=int, default=0,
         help='Number of parallel workers (0 = min(n_tests, cpu_count))',
     )
+    parser.add_argument(
+        '--from-cache', action='store_true', default=False,
+        help='Rebuild the report from the most recent recorded run of each '
+             'experiment in history.db (no simulation is re-executed). Falls '
+             'back to running fresh for any experiment without a cached run.',
+    )
     args = parser.parse_args()
 
     t_total = time.time()
 
-    if args.parallel and len(args.tests) > 1:
+    if args.parallel and len(args.tests) > 1 and not args.from_cache:
         n_workers = args.workers or min(len(args.tests), _mp.cpu_count() or 1)
         print(f'Running {len(args.tests)} experiments across {n_workers} workers...', flush=True)
         all_results = [None] * len(args.tests)
@@ -74,7 +91,7 @@ def main():
     else:
         all_results = []
         for name in args.tests:
-            all_results.append(run_experiment(name, output_dir=args.output))
+            all_results.append(_load_or_run(name, args.output, args.from_cache))
 
     html_path = generate_html_report(all_results, output_dir=args.output)
     print(f'\nTotal wall time: {time.time() - t_total:.1f}s')
