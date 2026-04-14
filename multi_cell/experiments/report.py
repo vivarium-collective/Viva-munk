@@ -69,11 +69,26 @@ def _section_html(r, output_dir):
         </script>
       </div>"""
 
+    sim_id = r.get('simulation_id')
+    db_path = r.get('db_path')
+    sim_id_row = ''
+    if sim_id:
+        replay_cmd = (
+            f'python -m multi_cell.experiments.replay {sim_id}'
+            + (f' --output {os.path.dirname(db_path)}' if db_path and os.path.dirname(db_path) not in ('', 'out') else '')
+        )
+        sim_id_row = (
+            f'<tr><td>Simulation ID</td>'
+            f'<td><code class="sim-id" title="click to copy">{sim_id}</code>'
+            f'<div class="replay-hint">Replay: <code>{replay_cmd}</code></div></td></tr>'
+        )
+
     return f"""
     <section id="{safe_id}">
       <h2>{r['name'].replace('_', ' ').title()}</h2>
       <p>{r['description']}</p>
       <table>
+        {sim_id_row}
         <tr><td>Simulation time</td><td>{r['total_time']:.1f}s ({r['total_time']/3600:.1f} hours)</td></tr>
         <tr><td>Steps emitted</td><td>{r['n_steps']}</td></tr>
         <tr><td>Final cells</td><td>{r['n_cells']}</td></tr>
@@ -158,6 +173,11 @@ def generate_html_report(experiment_results, output_dir='out'):
   }}
   .experiment-nav a:hover {{ background: #eef3fa; border-color: #b8c7dc; }}
   section {{ scroll-margin-top: 4rem; }}
+  .sim-id {{ background: #f0f0f0; padding: 2px 8px; border-radius: 4px; cursor: copy; user-select: all; font-size: 12px; }}
+  .sim-id:hover {{ background: #e4ecf7; }}
+  .sim-id.copied {{ background: #d4edda; }}
+  .replay-hint {{ margin-top: 4px; font-size: 11px; color: #666; }}
+  .replay-hint code {{ background: #f8f8f8; padding: 1px 6px; border-radius: 3px; }}
 </style>
 </head>
 <body>
@@ -170,6 +190,17 @@ def generate_html_report(experiment_results, output_dir='out'):
 {nav_html}
 {''.join(sections)}
 {_json_viewer_js()}
+<script>
+document.querySelectorAll('.sim-id').forEach(el => {{
+  el.addEventListener('click', async () => {{
+    try {{
+      await navigator.clipboard.writeText(el.textContent);
+      el.classList.add('copied');
+      setTimeout(() => el.classList.remove('copied'), 900);
+    }} catch (e) {{}}
+  }});
+}});
+</script>
 </body>
 </html>"""
 
