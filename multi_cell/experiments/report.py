@@ -70,30 +70,17 @@ def _section_html(r, output_dir):
       </div>"""
 
     sim_id = r.get('simulation_id')
-    db_path = r.get('db_path')
     sim_id_row = ''
     if sim_id:
-        db_arg = ''
-        if db_path and os.path.dirname(db_path) not in ('', 'out'):
-            db_arg = f' --output {os.path.dirname(db_path)}'
-        rerender_cmd = (
-            f'python -m multi_cell.experiments.replay {sim_id}{db_arg}'
-        )
-        db_literal = db_path or 'out/history.db'
-        analysis_snippet = (
-            "from process_bigraph.emitter import load_history, load_simulation_metadata\n"
-            f"history = load_history('{db_literal}', '{sim_id}')\n"
-            f"meta    = load_simulation_metadata('{db_literal}', '{sim_id}')"
+        tip = (
+            'Primary key of this run in out/history.db on the machine that '
+            'generated the report. Click to copy. See "How to reproduce" at '
+            'the end of this report for how to access the underlying data.'
         )
         sim_id_row = (
             f'<tr><td>Simulation ID</td>'
-            f'<td><code class="sim-id" title="click to copy">{sim_id}</code>'
-            f'<div class="replay-hint">'
-            f'<strong>Load for analysis (Python):</strong>'
-            f'<pre class="snippet">{analysis_snippet}</pre>'
-            f'<strong>Re-render GIF from DB (no re-run):</strong> '
-            f'<code>{rerender_cmd}</code>'
-            f'</div></td></tr>'
+            f'<td><code class="sim-id" title="{tip}">{sim_id}</code></td>'
+            f'</tr>'
         )
 
     cached = bool(r.get('cached'))
@@ -141,7 +128,11 @@ def _summary_html(experiment_results):
         )
         short_id = (r.get('simulation_id') or '')[:8] or '—'
         name_href = r['name'].replace(' ', '_')
-        wall_display = f'{wall:.1f}s' if not cached else '—'
+        if wall > 0:
+            wall_tip = ' title="wall-clock time of the original simulation run (recorded in history.db)"' if cached else ''
+            wall_cell = f'<span{wall_tip}>{wall:.1f}s</span>'
+        else:
+            wall_cell = '—'
         rows.append(
             f'<tr>'
             f'<td><a href="#{name_href}">{r["name"].replace("_", " ").title()}</a></td>'
@@ -149,7 +140,7 @@ def _summary_html(experiment_results):
             f'<td><code>{short_id}</code></td>'
             f'<td>{r.get("n_steps", "—")}</td>'
             f'<td>{sim_t/3600:.2f} h</td>'
-            f'<td>{wall_display}</td>'
+            f'<td>{wall_cell}</td>'
             f'</tr>'
         )
 
@@ -185,9 +176,35 @@ def _summary_html(experiment_results):
   </table>
   <p style="margin-top:0.8rem; font-size:12px; color:#666;">
     <strong>fresh</strong> = simulation executed for this report.
-    <strong>cached</strong> = rebuilt from existing rows in <code>history.db</code>; no simulation re-run.
-    Wall-clock is reported only for fresh runs.
+    <strong>cached</strong> = rebuilt from existing rows in <code>history.db</code>; no simulation re-run. Wall-clock for cached rows shows the original run's recorded duration.
   </p>
+</section>"""
+
+
+def _reproduce_html(meta):
+    """End-of-report block with short instructions for re-running the
+    experiments and accessing the recorded data on another machine."""
+    commit = (meta.get('commit') or '')[:8] or 'main'
+    return f"""
+<section class="reproduce" id="reproduce">
+  <h2>How to reproduce</h2>
+  <p>The simulation IDs shown above identify runs in a SQLite database on the machine that generated this report (<code>out/history.db</code>). Viewers reading this report online will not have that file — to get the underlying data you need to re-run the experiments yourself.</p>
+  <h3>Re-run locally</h3>
+  <pre class="snippet">git clone https://github.com/vivarium-collective/Viva-munk
+cd Viva-munk
+git checkout {commit}
+pip install -e .
+python -m multi_cell.experiments.test_suite</pre>
+  <p style="font-size:12px;color:#666;">This records every run into <code>out/history.db</code> and regenerates an HTML report at <code>out/report.html</code>.</p>
+  <h3>Access a run's data in Python</h3>
+  <pre class="snippet">from process_bigraph.emitter import load_history, load_simulation_metadata
+
+# Replace with any simulation_id from the summary table above.
+sim_id  = '&lt;simulation_id&gt;'
+history = load_history('out/history.db', sim_id)          # list of per-step dicts
+meta    = load_simulation_metadata('out/history.db', sim_id)  # config + provenance</pre>
+  <h3>Re-render a GIF from recorded history (no re-run)</h3>
+  <pre class="snippet">python -m multi_cell.experiments.replay &lt;simulation_id&gt;</pre>
 </section>"""
 
 
@@ -207,6 +224,7 @@ def generate_html_report(experiment_results, output_dir='out'):
   <span class="nav-title">Experiments:</span>
 {nav_links}
   <a href="#summary">Summary</a>
+  <a href="#reproduce">How to reproduce</a>
 </nav>"""
 
     commit_html = ''
@@ -281,6 +299,11 @@ def generate_html_report(experiment_results, output_dir='out'):
   .summary td, .summary th {{ padding: 0.3rem 0.6rem; border: 1px solid #eee; text-align: left; }}
   .summary th {{ background: #f8f8f8; }}
   .summary tfoot td {{ font-weight: 600; background: #fafafa; }}
+  .reproduce {{ background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1.2rem 1.5rem; margin-top: 1.5rem; }}
+  .reproduce h2 {{ margin-top: 0; }}
+  .reproduce h3 {{ margin-top: 1.2rem; margin-bottom: 0.3rem; font-size: 14px; }}
+  .reproduce pre.snippet {{ background: #f6f8fa; border: 1px solid #e4e4e4; border-radius: 6px; padding: 10px 12px; margin: 0; font-family: ui-monospace, monospace; font-size: 12px; overflow-x: auto; }}
+  .reproduce p {{ font-size: 13px; color: #444; margin: 0.4rem 0; }}
 </style>
 </head>
 <body>
@@ -293,6 +316,7 @@ def generate_html_report(experiment_results, output_dir='out'):
 {nav_html}
 {''.join(sections)}
 {_summary_html(experiment_results)}
+{_reproduce_html(meta)}
 {_json_viewer_js()}
 <script>
 document.querySelectorAll('.sim-id').forEach(el => {{
