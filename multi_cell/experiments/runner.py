@@ -3,13 +3,20 @@ GIF/viz/JSON, and returns a result dict that the report can render."""
 import json
 import os
 import time
+import uuid
 
 from bigraph_viz import plot_bigraph
 from process_bigraph import Composite, gather_emitter_results
+from process_bigraph.emitter import save_simulation_metadata
 
 from multi_cell import core_import
 from multi_cell.experiments.registry import EXPERIMENT_REGISTRY
 from multi_cell.plots.multibody_plots import simulation_to_gif
+
+
+# Single shared DB file under out/ so every experiment run is recorded and
+# can be replayed later via multi_cell.experiments.replay.
+DB_FILE = 'history.db'
 
 
 # Single core per process. Each parallel worker re-imports this module and
@@ -146,10 +153,50 @@ def run_experiment(name, output_dir='out', entry=None):
 
     core = PYMUNK_CORE
     document = doc_fn(config)
+
+    # Swap the document's default (RAM) emitter for a SQLiteEmitter so every
+    # experiment run is persisted under a unique simulation_id. The document's
+    # wire mapping (agents/particles/time) is preserved — we only rewrite the
+    # address and config.
+    simulation_id = str(uuid.uuid4())
+    if 'emitter' in document:
+        wires = document['emitter'].get('inputs', {})
+        document['emitter'] = {
+            '_type': 'step',
+            'address': 'local:SQLiteEmitter',
+            'config': {
+                'emit': {port: 'node' for port in wires},
+                'file_path': output_dir,
+                'db_file': DB_FILE,
+                'simulation_id': simulation_id,
+                'name': name,
+            },
+            'inputs': wires,
+        }
+
     sim = Composite({'state': document}, core=core)
 
     viz_path = _save_bigraph_viz(core, sim, name, output_dir)
     serialized = _serialize_state(core, sim)
+
+    # Record the composite config + run metadata so the run can be replayed
+    # long after the process ends. We store the serialized state since it's
+    # JSON-safe (live process objects are not).
+    db_path = os.path.join(output_dir, DB_FILE)
+    save_simulation_metadata(
+        db_path,
+        simulation_id,
+        composite_config=serialized,
+        metadata={
+            'experiment_name': name,
+            'total_time': total_time,
+            'config': config,
+            'description': entry.get('description', ''),
+        },
+        name=name,
+    )
+    print(f'  simulation_id: {simulation_id}')
+    print(f'  db: {db_path}')
 
     t0 = time.time()
     sim.run(total_time)
@@ -162,7 +209,41 @@ def run_experiment(name, output_dir='out', entry=None):
     n_particles = len(last.get('particles', {}))
     print(f'Final state: {n_cells} cells, {n_particles} particles')
 
-    # Generate GIF — target ~150 frames
+    gif_path = render_gif(name, results, document, config, output_dir, env_size)
+    print(f'GIF: {gif_path}')
+
+    return _build_result_dict(
+        name, simulation_id, db_path, gif_path, viz_path,
+        serialized, elapsed, results, n_cells, n_particles,
+        total_time, entry,
+    )
+
+
+def _build_result_dict(name, simulation_id, db_path, gif_path, viz_path,
+                       serialized, elapsed, results, n_cells, n_particles,
+                       total_time, entry):
+    return {
+        'name': name,
+        'simulation_id': simulation_id,
+        'db_path': db_path,
+        'gif_path': gif_path,
+        'viz_path': f'{viz_path}.png' if viz_path else None,
+        'state_json': serialized,
+        'elapsed': elapsed,
+        'n_steps': len(results),
+        'n_cells': n_cells,
+        'n_particles': n_particles,
+        'total_time': total_time,
+        'description': entry.get('description', '') if entry else '',
+    }
+
+
+def render_gif(name, results, document, config, output_dir, env_size):
+    '''Render a ~150-frame GIF for a single run.
+
+    Pure function over (results, document, config) so it can be driven from
+    either a live simulation or a replay reading history back from SQLite.
+    '''
     gif_config, xlim, ylim, flow_regions, adhesion_surface = _derive_gif_options(
         document, config, env_size,
     )
@@ -262,17 +343,4 @@ def run_experiment(name, output_dir='out', entry=None):
         min_cell_px=min_cell_px,
         cell_colorbar=cell_colorbar,
     )
-    print(f'GIF: {gif_path}')
-
-    return {
-        'name': name,
-        'gif_path': gif_path,
-        'viz_path': f'{viz_path}.png' if viz_path else None,
-        'state_json': serialized,
-        'elapsed': elapsed,
-        'n_steps': len(results),
-        'n_cells': n_cells,
-        'n_particles': n_particles,
-        'total_time': total_time,
-        'description': entry.get('description', ''),
-    }
+    return gif_path

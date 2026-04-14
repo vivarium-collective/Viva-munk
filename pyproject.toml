@@ -50,3 +50,10 @@ packages = [
     "multi_cell.plots",
     "multi_cell.types",
 ]
+
+# sqlemitter branch: use the SQLiteEmitter from the local process-bigraph
+# checkout (sqlite-emitter branch). To activate, run:
+#   uv sync  (if using uv)
+#   or: pip install -e ../process-bigraph
+[tool.uv.sources]
+process-bigraph = { path = "../process-bigraph", editable = true }
