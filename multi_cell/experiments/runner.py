@@ -364,6 +364,17 @@ def render_gif(name, results, document, config, output_dir, env_size):
     Pure function over (results, document, config) so it can be driven from
     either a live simulation or a replay reading history back from SQLite.
     '''
+    # Static fields (e.g. the chemotaxis ligand gradient) are intentionally
+    # not emitted per-tick — they'd balloon the history with identical
+    # copies of a 15k-float array. Stamp the initial field from the
+    # document/composite_config onto every frame that lacks one so the GIF
+    # renderer's field_overlay still paints its background.
+    static_fields = document.get('fields') if isinstance(document, dict) else None
+    if static_fields:
+        for step in results:
+            if isinstance(step, dict) and not step.get('fields'):
+                step['fields'] = static_fields
+
     gif_config, xlim, ylim, flow_regions, adhesion_surface = _derive_gif_options(
         document, config, env_size,
     )
