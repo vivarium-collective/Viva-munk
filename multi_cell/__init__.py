@@ -62,6 +62,37 @@ def _patch_composite_realize_on_sentinels():
 _patch_composite_realize_on_sentinels()
 
 
+def _patch_list_apply_tuple_update():
+    """Make ``apply(schema: List, state: list, update: tuple)`` do
+    element-wise add when shape + numeric content match.
+
+    JSON serialization drops the tuple type, so a state that started as a
+    ``(x, y)`` tuple becomes a ``[x, y]`` list and schema inference picks
+    ``List(_element=Float)`` instead of ``Tuple(_values=[Float, Float])``.
+    The default ``apply(List)`` then does ``state + update`` — concat, not
+    element-wise — and crashes on the ``list + tuple`` type mismatch the
+    moment a process emits a tuple delta (``PymunkProcess`` does this for
+    ``location``/``velocity`` every tick). Pin element-wise behavior for
+    the JSON-roundtripped case so the dashboard's subprocess flow works.
+    """
+    from plum import dispatch
+    from bigraph_schema.schema import List
+    from bigraph_schema.methods.apply import apply as _apply
+
+    @_apply.dispatch
+    def apply_list_with_tuple_update(schema: List, state: list, update: tuple, path):
+        if len(state) == len(update) and all(
+            isinstance(s, (int, float)) for s in state
+        ):
+            return [s + u for s, u in zip(state, update)], []
+        # Length mismatch or non-numeric: fall back to concat (matches
+        # the default ``state + list(update)`` semantics).
+        return list(state) + list(update), []
+
+
+_patch_list_apply_tuple_update()
+
+
 from multi_cell import composites as _composites  # noqa: E402,F401 — fires @composite_generator side-effects
 
 
