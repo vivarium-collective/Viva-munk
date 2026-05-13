@@ -24,6 +24,7 @@ from multi_cell.processes.quorum_sensing import QuorumSensing
 from multi_cell.processes.field_decay import FieldDecay
 from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
 from multi_cell.types import positive_types
+from multi_cell.visualizations import MultibodyVizStep
 
 # Register custom dispatches once at module import
 register_pymunk_agent_dispatches()
@@ -119,6 +120,7 @@ def register_processes(core):
     core.register_link('IBColony', IBColony)
     core.register_link('QuorumSensing', QuorumSensing)
     core.register_link('FieldDecay', FieldDecay)
+    core.register_link('MultibodyVizStep', MultibodyVizStep)
     core.register_link('Composite', Composite)
     core.register_link('RAMEmitter', RAMEmitter)
     core.register_link('SQLiteEmitter', SQLiteEmitter)

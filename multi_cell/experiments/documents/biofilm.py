@@ -3,6 +3,7 @@ from process_bigraph.emitter import emitter_from_wires
 
 from multi_cell.processes.multibody import make_initial_state
 from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
+from multi_cell.visualizations import make_multibody_viz_step, make_viz_stores
 
 
 def biofilm_document(config=None):
@@ -62,6 +63,14 @@ def biofilm_document(config=None):
                 'circle_particles': ['particles'],
             },
         },
+        'stores': make_viz_stores(),
+        'multibody_viz': make_multibody_viz_step(
+            title='biofilm',
+            env_width=env_size,
+            env_height=env_size,
+            figure_width=6.0,
+            figure_height=6.0,
+        ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],
             'particles': ['particles'],

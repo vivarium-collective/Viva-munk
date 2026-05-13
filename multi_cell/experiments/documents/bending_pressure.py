@@ -6,6 +6,7 @@ from process_bigraph.emitter import emitter_from_wires
 from multi_cell.processes.multibody import build_microbe, make_rng
 from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
 from multi_cell.processes.pressure import make_pressure_process
+from multi_cell.visualizations import make_multibody_viz_step, make_viz_stores
 
 
 def bending_pressure_document(config=None):
@@ -92,6 +93,14 @@ def bending_pressure_document(config=None):
             pressure_scale=pressure_scale,
             env_size=env_size,
             wall_weight=2.0,
+        ),
+        'stores': make_viz_stores(),
+        'multibody_viz': make_multibody_viz_step(
+            title='bending_pressure',
+            env_width=env_size,
+            env_height=env_size,
+            figure_width=6.0,
+            figure_height=6.0,
         ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],

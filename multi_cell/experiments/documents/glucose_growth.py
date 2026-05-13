@@ -7,6 +7,7 @@ from process_bigraph.emitter import emitter_from_wires
 from multi_cell.processes.multibody import build_microbe, make_rng
 from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
 from multi_cell.processes.cell_field_exchange import make_cell_field_exchange_process
+from multi_cell.visualizations import make_multibody_viz_step, make_viz_stores
 
 
 def glucose_growth_document(config=None):
@@ -116,6 +117,16 @@ def glucose_growth_document(config=None):
             agents_key='cells',
             fields_key='fields',
             interval=interval,
+        ),
+        'stores': make_viz_stores(),
+        'multibody_viz': make_multibody_viz_step(
+            title='glucose_growth',
+            env_width=env_size,
+            env_height=env_size,
+            figure_width=6.0,
+            figure_height=6.0,
+            field_mol_id='glucose',
+            has_particles=False,
         ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],
