@@ -62,6 +62,9 @@ def _patch_composite_realize_on_sentinels():
 _patch_composite_realize_on_sentinels()
 
 
+from multi_cell import composites as _composites  # noqa: E402,F401 — fires @composite_generator side-effects
+
+
 def register_pymunk_types(core):
     # Use the optimized PymunkAgent Node subclass instead of a dict schema.
     # This eliminates per-field dispatch overhead in apply/reconcile/realize.
