@@ -7,3 +7,5 @@ uv.lock
 *.egg-info/
 venv/
 *.pyc
+.pbg/
+reports/
