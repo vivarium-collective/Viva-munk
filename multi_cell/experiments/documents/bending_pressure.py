@@ -101,6 +101,8 @@ def bending_pressure_document(config=None):
             env_height=env_size,
             figure_width=6.0,
             figure_height=6.0,
+            color_mode='pressure',
+            pressure_max=8.0,
         ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],

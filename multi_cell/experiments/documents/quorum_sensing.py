@@ -223,6 +223,8 @@ def quorum_sensing_document(config=None):
             figure_height=6.0,
             field_mol_id='ai',
             has_particles=False,
+            color_mode='qs_state',
+            qs_state_threshold=0.5,
         ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],
