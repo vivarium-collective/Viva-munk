@@ -10,3 +10,4 @@ venv/
 .pbg/
 reports/
 scripts/
+studies/*/runs.db
