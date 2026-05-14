@@ -23,46 +23,82 @@ from multi_cell.experiments.documents.mother_machine import mother_machine_docum
 from multi_cell.experiments.documents.quorum_sensing import quorum_sensing_document
 
 
-@composite_generator(name="attachment", description="Cells settling/attaching on a surface.")
+@composite_generator(
+    name="attachment",
+    description="Cells settling/attaching on a surface.",
+    default_n_steps=200,
+)
 def attachment(core=None) -> dict:
     return attachment_document()
 
 
-@composite_generator(name="bending_pressure", description="Bending-pressure rod-like cells.")
+@composite_generator(
+    name="bending_pressure",
+    description="Bending-pressure rod-like cells.",
+    default_n_steps=200,
+)
 def bending_pressure(core=None) -> dict:
     return bending_pressure_document()
 
 
-@composite_generator(name="biofilm", description="Growing biofilm with EPS secretion + pressure dynamics.")
+@composite_generator(
+    name="biofilm",
+    description="Growing biofilm with EPS secretion + pressure dynamics.",
+    default_n_steps=500,
+)
 def biofilm(core=None) -> dict:
     return biofilm_document()
 
 
-@composite_generator(name="chemotaxis", description="Run/tumble chemotaxis up a static 2D ligand gradient.")
+@composite_generator(
+    name="chemotaxis",
+    description="Run/tumble chemotaxis up a static 2D ligand gradient.",
+    default_n_steps=200,
+)
 def chemotaxis(core=None) -> dict:
     return chemotaxis_document()
 
 
-@composite_generator(name="daughter_machine", description="Daughter-machine geometry: tracking daughter cells.")
+@composite_generator(
+    name="daughter_machine",
+    description="Daughter-machine geometry: tracking daughter cells.",
+    default_n_steps=300,
+)
 def daughter_machine(core=None) -> dict:
     return daughter_machine_document()
 
 
-@composite_generator(name="glucose_growth", description="Glucose-driven growth and division.")
+@composite_generator(
+    name="glucose_growth",
+    description="Glucose-driven growth and division.",
+    default_n_steps=300,
+)
 def glucose_growth(core=None) -> dict:
     return glucose_growth_document()
 
 
-@composite_generator(name="inclusion_bodies", description="Inclusion-body accumulation across a growing colony.")
+@composite_generator(
+    name="inclusion_bodies",
+    description="Inclusion-body accumulation across a growing colony.",
+    default_n_steps=500,
+)
 def inclusion_bodies(core=None) -> dict:
     return inclusion_bodies_document()
 
 
-@composite_generator(name="mother_machine", description="Mother-machine geometry: single-channel cell trapping.")
+@composite_generator(
+    name="mother_machine",
+    description="Mother-machine geometry: single-channel cell trapping.",
+    default_n_steps=300,
+)
 def mother_machine(core=None) -> dict:
     return mother_machine_document()
 
 
-@composite_generator(name="quorum_sensing", description="Quorum-sensing autoinducer feedback in a growing colony.")
+@composite_generator(
+    name="quorum_sensing",
+    description="Quorum-sensing autoinducer feedback in a growing colony.",
+    default_n_steps=300,
+)
 def quorum_sensing(core=None) -> dict:
     return quorum_sensing_document()
