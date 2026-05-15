@@ -21,7 +21,7 @@ Today, opening a pbg-package in the vivarium dashboard requires scaffolding a
 *separate workspace directory* via `/pbg-workspace`, installing the package
 into the workspace's venv, and wiring the workspace's `workspace.yaml` to
 reference it. That is the right model for the **multi-package composition
-case** (e.g., wiring `pbg-smoldyn` + `pbg-cobra` + `pbg-munk` together), but
+case** (e.g., wiring `pbg-smoldyn` + `pbg-cobra` + `viva-munk` together), but
 it is heavy ceremony for the overwhelmingly common **single-package case**
 ("I have a pbg-package, I just want to open it in the dashboard").
 
