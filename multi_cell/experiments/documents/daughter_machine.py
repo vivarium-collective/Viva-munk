@@ -4,7 +4,11 @@ from process_bigraph.emitter import emitter_from_wires
 from multi_cell.processes.multibody import make_initial_state
 from multi_cell.processes.grow_divide import add_grow_divide_to_agents
 from multi_cell.processes.remove_crossing import make_remove_crossing_process
-from multi_cell.visualizations import make_multibody_viz_step, make_viz_stores
+from multi_cell.visualizations import (
+    make_cell_mass_traces_step,
+    make_multibody_viz_step,
+    make_viz_stores,
+)
 
 
 def daughter_machine_document(config=None):
@@ -76,6 +80,9 @@ def daughter_machine_document(config=None):
             env_height=env_size,
             figure_width=6.0,
             figure_height=6.0,
+        ),
+        'cell_mass_traces': make_cell_mass_traces_step(
+            title='daughter_machine — cell mass',
         ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],

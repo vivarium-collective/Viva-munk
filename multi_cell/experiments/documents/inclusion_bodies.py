@@ -23,7 +23,11 @@ from process_bigraph.emitter import emitter_from_wires
 from multi_cell.processes.multibody import build_microbe, make_rng
 from multi_cell.processes.inclusion_body import make_ib_colony_process
 from multi_cell.processes.pressure import make_pressure_process
-from multi_cell.visualizations import make_multibody_viz_step, make_viz_stores
+from multi_cell.visualizations import (
+    make_cell_mass_traces_step,
+    make_multibody_viz_step,
+    make_viz_stores,
+)
 
 
 def inclusion_bodies_document(config=None):
@@ -127,6 +131,9 @@ def inclusion_bodies_document(config=None):
             figure_height=6.0,
             color_mode='inclusion_body',
             ib_max=800.0,
+        ),
+        'cell_mass_traces': make_cell_mass_traces_step(
+            title='inclusion_bodies — cell mass',
         ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],
