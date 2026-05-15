@@ -162,20 +162,6 @@ def chemotaxis_document(config=None):
             fields_key='fields',
             interval=interval,
         ),
-        # Streaming PNG visualization — wires cells + ligand field +
-        # global_time into a MultibodyVizStep, which writes HTML to
-        # viz_html each tick. The dashboard's render_results() reads
-        # this and surfaces it under the run's viz panel.
-        'stores': make_viz_stores(),
-        'multibody_viz': make_multibody_viz_step(
-            title='chemotaxis',
-            env_width=env_width,
-            env_height=env_height,
-            figure_width=9.0,
-            figure_height=1.5,
-            field_mol_id='glucose',
-            has_particles=False,
-        ),
         # Emit only what the GIF needs: per-cell location/length/radius
         # (via the cells subtree) plus global_time. The ligand field is
         # static (no DiffusionAdvection process updates it), so there's no

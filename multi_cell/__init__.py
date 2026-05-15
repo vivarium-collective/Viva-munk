@@ -33,10 +33,9 @@ from spatio_flux.visualizations import (
     FieldHeatmap,
     FieldAnimationGif,
     FieldSnapshotsGrid,
+    ParticleTraces,
     TestSuiteTimeSeries,
 )
-# ParticleTraces lives workspace-local until spatio-flux PR #24 merges.
-from multi_cell.visualizations.particle_traces import ParticleTraces
 from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
 from multi_cell.types import positive_types
 from multi_cell.visualizations import MultibodyVizStep
