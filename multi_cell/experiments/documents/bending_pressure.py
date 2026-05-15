@@ -6,7 +6,11 @@ from process_bigraph.emitter import emitter_from_wires
 from multi_cell.processes.multibody import build_microbe, make_rng
 from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
 from multi_cell.processes.pressure import make_pressure_process
-from multi_cell.visualizations import make_multibody_viz_step, make_viz_stores
+from multi_cell.visualizations import (
+    make_cell_mass_traces_step,
+    make_multibody_viz_step,
+    make_viz_stores,
+)
 
 
 def bending_pressure_document(config=None):
@@ -103,6 +107,9 @@ def bending_pressure_document(config=None):
             figure_height=6.0,
             color_mode='pressure',
             pressure_max=8.0,
+        ),
+        'cell_mass_traces': make_cell_mass_traces_step(
+            title='bending_pressure — cell mass',
         ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],

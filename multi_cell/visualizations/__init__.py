@@ -371,3 +371,42 @@ def make_multibody_viz_step(
 # GifRenderer-based MultibodyVizStep stays focused on the streaming-GIF
 # concern.
 from multi_cell.visualizations.cell_mass_traces import CellMassTraces  # noqa: E402,F401
+
+
+def make_cell_mass_traces_step(
+    *,
+    title: str = 'cell mass over time',
+    field: str = 'mass',
+    show_legend: bool = False,
+    xlabel: str = 'time',
+    ylabel: str = 'mass',
+    figsize_w: float = 8.0,
+    figsize_h: float = 4.0,
+) -> dict:
+    """Return a `CellMassTraces` Step spec wired against the conventional
+    paths (`cells`, `global_time` → `stores.viz_cell_mass_html`).
+
+    Pairs with :func:`make_viz_stores` (which already provides a string
+    slot for `viz_html`; the cell-mass output uses a sibling slot so the
+    multibody GIF and the mass-trace PNG can coexist in the same composite).
+    """
+    return {
+        '_type': 'step',
+        'address': 'local:CellMassTraces',
+        'config': {
+            'title': title,
+            'xlabel': xlabel,
+            'ylabel': ylabel,
+            'field': field,
+            'show_legend': show_legend,
+            'figsize_w': float(figsize_w),
+            'figsize_h': float(figsize_h),
+        },
+        'inputs': {
+            'cells': ['cells'],
+            'time':  ['global_time'],
+        },
+        'outputs': {
+            'html': ['stores', 'viz_cell_mass_html'],
+        },
+    }
