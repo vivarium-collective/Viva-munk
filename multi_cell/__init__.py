@@ -22,8 +22,23 @@ from multi_cell.processes.chemotaxis import Chemotaxis
 from multi_cell.processes.inclusion_body import InclusionBody, IBColony
 from multi_cell.processes.quorum_sensing import QuorumSensing
 from multi_cell.processes.field_decay import FieldDecay
+# Spatio-flux processes referenced by spatio_flux.composites.particles.* —
+# brownian_particles needs both BrownianMovement and ManageBoundaries to
+# resolve their `local:` addresses at run time.
+from spatio_flux.processes.particles import BrownianMovement, ManageBoundaries
+# Spatio-flux Visualization Steps — heatmaps, GIFs, snapshot grids, and
+# emitter-driven timeseries. Registered so dashboard users can attach them
+# to any composite via the Visualizations tab.
+from spatio_flux.visualizations import (
+    FieldHeatmap,
+    FieldAnimationGif,
+    FieldSnapshotsGrid,
+    ParticleTraces,
+    TestSuiteTimeSeries,
+)
 from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
 from multi_cell.types import positive_types
+from multi_cell.visualizations import MultibodyVizStep
 
 # Register custom dispatches once at module import
 register_pymunk_agent_dispatches()
@@ -62,13 +77,51 @@ def _patch_composite_realize_on_sentinels():
 _patch_composite_realize_on_sentinels()
 
 
+def _patch_list_apply_tuple_update():
+    """Make ``apply(schema: List, state: list, update: tuple)`` do
+    element-wise add when shape + numeric content match.
+
+    JSON serialization drops the tuple type, so a state that started as a
+    ``(x, y)`` tuple becomes a ``[x, y]`` list and schema inference picks
+    ``List(_element=Float)`` instead of ``Tuple(_values=[Float, Float])``.
+    The default ``apply(List)`` then does ``state + update`` — concat, not
+    element-wise — and crashes on the ``list + tuple`` type mismatch the
+    moment a process emits a tuple delta (``PymunkProcess`` does this for
+    ``location``/``velocity`` every tick). Pin element-wise behavior for
+    the JSON-roundtripped case so the dashboard's subprocess flow works.
+    """
+    from plum import dispatch
+    from bigraph_schema.schema import List
+    from bigraph_schema.methods.apply import apply as _apply
+
+    @_apply.dispatch
+    def apply_list_with_tuple_update(schema: List, state: list, update: tuple, path):
+        if len(state) == len(update) and all(
+            isinstance(s, (int, float)) for s in state
+        ):
+            return [s + u for s, u in zip(state, update)], []
+        # Length mismatch or non-numeric: fall back to concat (matches
+        # the default ``state + list(update)`` semantics).
+        return list(state) + list(update), []
+
+
+_patch_list_apply_tuple_update()
+
+
+from multi_cell import composites as _composites  # noqa: E402,F401 — fires @composite_generator side-effects
+
+
 def register_pymunk_types(core):
     # Use the optimized PymunkAgent Node subclass instead of a dict schema.
     # This eliminates per-field dispatch overhead in apply/reconcile/realize.
     core.register_type('pymunk_agent', PymunkAgent())
-    # Concentration / field types used by DiffusionAdvection + CellFieldExchange
-    for name, schema in positive_types.items():
-        core.register_type(name, schema)
+    # NOTE: multi_cell.types.positive_types overlaps with spatio_flux's on
+    # ('positive_float', 'positive_array', 'concentration', 'set_float') —
+    # multi_cell uses instances (PositiveFloat()), spatio_flux uses classes
+    # (PositiveFloat). Registering both forms triggers a resolve conflict in
+    # bigraph_schema. spatio_flux's set is a strict superset (adds count,
+    # mass, delta_conc), so we let spatio_flux_register_types own these
+    # types in core_import() and skip the duplicate loop here.
 
 
 def register_processes(core):
@@ -85,6 +138,15 @@ def register_processes(core):
     core.register_link('IBColony', IBColony)
     core.register_link('QuorumSensing', QuorumSensing)
     core.register_link('FieldDecay', FieldDecay)
+    core.register_link('BrownianMovement', BrownianMovement)
+    core.register_link('ManageBoundaries', ManageBoundaries)
+    core.register_link('MultibodyVizStep', MultibodyVizStep)
+    # Spatio-flux Visualization Steps
+    core.register_link('FieldHeatmap', FieldHeatmap)
+    core.register_link('FieldAnimationGif', FieldAnimationGif)
+    core.register_link('FieldSnapshotsGrid', FieldSnapshotsGrid)
+    core.register_link('ParticleTraces', ParticleTraces)
+    core.register_link('TestSuiteTimeSeries', TestSuiteTimeSeries)
     core.register_link('Composite', Composite)
     core.register_link('RAMEmitter', RAMEmitter)
     core.register_link('SQLiteEmitter', SQLiteEmitter)
@@ -96,6 +158,12 @@ def core_import(core=None, config=None):
     pb_types_register(core)
     pb_register_types(core)
     viz_register_types(core)
+    # Spatio-flux types (particle, position, bounds, fields, ...) are
+    # referenced by spatio_flux.composites.particles.* and other composites
+    # used in this workspace. Their Process classes (registered below) declare
+    # ports like 'map[particle]' that won't resolve without these types.
+    from spatio_flux import register_types as spatio_flux_register_types
+    spatio_flux_register_types(core)
     register_pymunk_types(core)
     register_processes(core)
     return core

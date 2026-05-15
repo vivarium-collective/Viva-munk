@@ -11,6 +11,7 @@ from multi_cell.processes.multibody import make_rng
 from multi_cell.processes.cell_field_exchange import make_cell_field_exchange_process
 from multi_cell.processes.quorum_sensing import add_quorum_sensing_to_agents
 from multi_cell.processes.field_decay import make_field_decay_process
+from multi_cell.visualizations import make_multibody_viz_step, make_viz_stores
 
 
 def _build_circle_cell(agent_id, x, y, radius, density):
@@ -213,6 +214,18 @@ def quorum_sensing_document(config=None):
                 interval=interval,
             ),
         } if bulk_decay_rate > 0.0 else {}),
+        'stores': make_viz_stores(),
+        'multibody_viz': make_multibody_viz_step(
+            title='quorum_sensing',
+            env_width=env_size,
+            env_height=env_size,
+            figure_width=6.0,
+            figure_height=6.0,
+            field_mol_id='ai',
+            has_particles=False,
+            color_mode='qs_state',
+            qs_state_threshold=0.5,
+        ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],
             'fields': ['fields'],
