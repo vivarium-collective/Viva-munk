@@ -365,3 +365,9 @@ def make_multibody_viz_step(
             'html': ['stores', 'viz_html'],
         },
     }
+
+
+# Per-cell mass-over-time line plot. Lives in its own module so the
+# GifRenderer-based MultibodyVizStep stays focused on the streaming-GIF
+# concern.
+from multi_cell.visualizations.cell_mass_traces import CellMassTraces  # noqa: E402,F401

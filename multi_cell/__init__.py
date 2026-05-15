@@ -38,7 +38,7 @@ from spatio_flux.visualizations import (
 )
 from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
 from multi_cell.types import positive_types
-from multi_cell.visualizations import MultibodyVizStep
+from multi_cell.visualizations import MultibodyVizStep, CellMassTraces
 
 # Register custom dispatches once at module import
 register_pymunk_agent_dispatches()
@@ -141,6 +141,7 @@ def register_processes(core):
     core.register_link('BrownianMovement', BrownianMovement)
     core.register_link('ManageBoundaries', ManageBoundaries)
     core.register_link('MultibodyVizStep', MultibodyVizStep)
+    core.register_link('CellMassTraces', CellMassTraces)
     # Spatio-flux Visualization Steps
     core.register_link('FieldHeatmap', FieldHeatmap)
     core.register_link('FieldAnimationGif', FieldAnimationGif)
