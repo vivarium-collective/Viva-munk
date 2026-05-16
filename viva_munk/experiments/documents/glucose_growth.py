@@ -4,10 +4,10 @@ import math
 import numpy as np
 from process_bigraph.emitter import emitter_from_wires
 
-from multi_cell.processes.multibody import build_microbe, make_rng
-from multi_cell.processes.grow_divide import add_adder_grow_divide_to_agents
-from multi_cell.processes.cell_field_exchange import make_cell_field_exchange_process
-from multi_cell.visualizations import (
+from viva_munk.processes.multibody import build_microbe, make_rng
+from viva_munk.processes.grow_divide import add_adder_grow_divide_to_agents
+from viva_munk.processes.cell_field_exchange import make_cell_field_exchange_process
+from viva_munk.visualizations import (
     make_cell_mass_traces_step,
     make_multibody_viz_step,
     make_viz_stores,

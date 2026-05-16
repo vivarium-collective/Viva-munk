@@ -198,7 +198,7 @@ def _reproduce_html(meta):
 cd Viva-munk
 git checkout {commit}
 pip install -e .
-python -m multi_cell.experiments.test_suite</pre>
+python -m viva_munk.experiments.test_suite</pre>
   <p style="font-size:12px;color:#666;">This records every run into <code>out/history.db</code> and regenerates an HTML report at <code>out/report.html</code>.</p>
   <h3>Access a run's data in Python</h3>
   <pre class="snippet">from process_bigraph.emitter import load_history, load_simulation_metadata
@@ -208,7 +208,7 @@ sim_id  = '&lt;simulation_id&gt;'
 history = load_history('out/history.db', sim_id)          # list of per-step dicts
 meta    = load_simulation_metadata('out/history.db', sim_id)  # config + provenance</pre>
   <h3>Re-render a GIF from recorded history (no re-run)</h3>
-  <pre class="snippet">python -m multi_cell.experiments.replay &lt;simulation_id&gt;</pre>
+  <pre class="snippet">python -m viva_munk.experiments.replay &lt;simulation_id&gt;</pre>
 </section>"""
 
 

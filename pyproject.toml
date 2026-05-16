@@ -45,11 +45,11 @@ Repository = "https://github.com/vivarium-collective/Viva-munk"
 
 [tool.setuptools]
 packages = [
-    "multi_cell",
-    "multi_cell.processes",
-    "multi_cell.experiments",
-    "multi_cell.plots",
-    "multi_cell.types",
+    "viva_munk",
+    "viva_munk.processes",
+    "viva_munk.experiments",
+    "viva_munk.plots",
+    "viva_munk.types",
 ]
 
 # sqlemitter branch: use the SQLiteEmitter from the local process-bigraph

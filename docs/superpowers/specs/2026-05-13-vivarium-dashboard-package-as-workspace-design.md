@@ -66,7 +66,7 @@ minimal manifest, and the package itself becomes a serveable workspace.
 - Building a new top-level CLI (e.g., `pbg`). The user-facing primitive
   remains `vivarium-dashboard serve`.
 - Auto-migrating existing packages' composite layouts. (e.g., viva-munk's
-  `multi_cell/experiments/documents/*.py` → `multi_cell/composites/*.yaml` is
+  `viva_munk/experiments/documents/*.py` → `viva_munk/composites/*.yaml` is
   a separate, package-side migration with its own plan.)
 - Read-only / no-write-to-disk mode. Persistence (registered imports,
   decisions log, simulation runs) requires writing somewhere; this design
@@ -192,7 +192,7 @@ expect:
   live under `<package>/composites/` as `*.composite.{yaml,yml,json}` files,
   OR as `@composite_generator`-decorated functions inside the package.
 - viva-munk specifically has 8 ad-hoc Python builders in
-  `multi_cell/experiments/documents/*.py`. Migrating them is a separate
+  `viva_munk/experiments/documents/*.py`. Migrating them is a separate
   plan.
 
 ## 6. User flows
@@ -203,7 +203,7 @@ expect:
 cd ~/code/viva-munk
 .venv/bin/pip install -e .            # one-time
 .venv/bin/vivarium-dashboard serve
-  → no workspace.yaml found; writing one (package_path: multi_cell)
+  → no workspace.yaml found; writing one (package_path: viva_munk)
   → serving at http://localhost:8000
 ```
 
@@ -239,7 +239,7 @@ today.
 | 2 | Flat-layout pyproject (no `[tool.setuptools].packages`) | Walk top-level dirs; pick the single dir with `__init__.py` whose name matches dist name. Else fall back to `"."` with warning. |
 | 3 | Monorepo with multiple packages declared | Pick the one matching dist name; if no match, pick first and warn with `--package-path` override hint. |
 | 4 | `workspace.yaml` already exists | Don't clobber. Use as-is; if `schema_version != 2`, run existing `spec_migration` flow. |
-| 5 | Auto-detected `package_path` wrong | `vivarium-dashboard serve --package-path=multi_cell` persists into the auto-init'd `workspace.yaml`. Subsequent serves don't re-detect. |
+| 5 | Auto-detected `package_path` wrong | `vivarium-dashboard serve --package-path=viva_munk` persists into the auto-init'd `workspace.yaml`. Subsequent serves don't re-detect. |
 | 6 | Schema drift between dashboard-package and workspace-local | Workspace-local `.pbg/schemas/` wins if present (legacy); else dashboard-package schema. Document in `vivarium_dashboard/schemas/README.md`. |
 | 7 | Package not pip-installed in current venv | One-line check at serve startup: warn that in-place composites won't appear until `pip install -e .` runs. Don't block. |
 | 8 | No `.gitignore` in package repo | Don't create one. Only append `.pbg/local/` to an existing `.gitignore`. |

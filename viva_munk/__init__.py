@@ -11,17 +11,17 @@ from process_bigraph.emitter import RAMEmitter, SQLiteEmitter
 from bigraph_schema.core import Core, BASE_TYPES
 from bigraph_viz import register_types as viz_register_types
 
-from multi_cell.processes.multibody import PymunkProcess
-from multi_cell.processes.grow_divide import GrowDivide, AdderGrowDivide
-from multi_cell.processes.remove_crossing import RemoveCrossing
-from multi_cell.processes.secrete_eps import SecreteEPS
-from multi_cell.processes.pressure import Pressure
-from multi_cell.processes.diffusion_advection import DiffusionAdvection
-from multi_cell.processes.cell_field_exchange import CellFieldExchange
-from multi_cell.processes.chemotaxis import Chemotaxis
-from multi_cell.processes.inclusion_body import InclusionBody, IBColony
-from multi_cell.processes.quorum_sensing import QuorumSensing
-from multi_cell.processes.field_decay import FieldDecay
+from viva_munk.processes.multibody import PymunkProcess
+from viva_munk.processes.grow_divide import GrowDivide, AdderGrowDivide
+from viva_munk.processes.remove_crossing import RemoveCrossing
+from viva_munk.processes.secrete_eps import SecreteEPS
+from viva_munk.processes.pressure import Pressure
+from viva_munk.processes.diffusion_advection import DiffusionAdvection
+from viva_munk.processes.cell_field_exchange import CellFieldExchange
+from viva_munk.processes.chemotaxis import Chemotaxis
+from viva_munk.processes.inclusion_body import InclusionBody, IBColony
+from viva_munk.processes.quorum_sensing import QuorumSensing
+from viva_munk.processes.field_decay import FieldDecay
 # Spatio-flux processes referenced by spatio_flux.composites.particles.* —
 # brownian_particles needs both BrownianMovement and ManageBoundaries to
 # resolve their `local:` addresses at run time.
@@ -36,9 +36,9 @@ from spatio_flux.visualizations import (
     ParticleTraces,
     TestSuiteTimeSeries,
 )
-from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
-from multi_cell.types import positive_types
-from multi_cell.visualizations import MultibodyVizStep, CellMassTraces
+from viva_munk.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
+from viva_munk.types import positive_types
+from viva_munk.visualizations import MultibodyVizStep, CellMassTraces
 
 # Register custom dispatches once at module import
 register_pymunk_agent_dispatches()
@@ -108,16 +108,16 @@ def _patch_list_apply_tuple_update():
 _patch_list_apply_tuple_update()
 
 
-from multi_cell import composites as _composites  # noqa: E402,F401 — fires @composite_generator side-effects
+from viva_munk import composites as _composites  # noqa: E402,F401 — fires @composite_generator side-effects
 
 
 def register_pymunk_types(core):
     # Use the optimized PymunkAgent Node subclass instead of a dict schema.
     # This eliminates per-field dispatch overhead in apply/reconcile/realize.
     core.register_type('pymunk_agent', PymunkAgent())
-    # NOTE: multi_cell.types.positive_types overlaps with spatio_flux's on
+    # NOTE: viva_munk.types.positive_types overlaps with spatio_flux's on
     # ('positive_float', 'positive_array', 'concentration', 'set_float') —
-    # multi_cell uses instances (PositiveFloat()), spatio_flux uses classes
+    # viva_munk uses instances (PositiveFloat()), spatio_flux uses classes
     # (PositiveFloat). Registering both forms triggers a resolve conflict in
     # bigraph_schema. spatio_flux's set is a strict superset (adds count,
     # mass, delta_conc), so we let spatio_flux_register_types own these

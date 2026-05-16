@@ -231,7 +231,7 @@ git commit -m "test default_n_steps survives discover_all_composites pipeline"
 - Modify: `vivarium-dashboard/vivarium_dashboard/server.py` (the `_get_composites` handler)
 - Modify: `vivarium-dashboard/vivarium_dashboard/static/walkthrough.js` (`onComposite SelectChange` or equivalent)
 - Test: `vivarium-dashboard/tests/test_composite_explorer_api.py` (extend)
-- Modify: `viva-munk/multi_cell/composites/__init__.py` (add `default_n_steps` to each `@composite_generator` call)
+- Modify: `viva-munk/viva_munk/composites/__init__.py` (add `default_n_steps` to each `@composite_generator` call)
 
 - [ ] **Step 1: Write the failing test.** Append to `tests/test_composite_explorer_api.py`:
 
@@ -307,7 +307,7 @@ function _ceOnCompositeSelect(composite) {
 
 (The exact function/handler name will depend on existing code; find where `#ce-steps` is read and the composite metadata is loaded.)
 
-- [ ] **Step 7: Wire `default_n_steps` into each viva-munk generator.** Edit `~/code/viva-munk/multi_cell/composites/__init__.py`. Look up the curated `n_steps` per experiment in `multi_cell/experiments/registry.py` and pass each through. Example for chemotaxis (apply analogously to all nine):
+- [ ] **Step 7: Wire `default_n_steps` into each viva-munk generator.** Edit `~/code/viva-munk/viva_munk/composites/__init__.py`. Look up the curated `n_steps` per experiment in `viva_munk/experiments/registry.py` and pass each through. Example for chemotaxis (apply analogously to all nine):
 
 ```python
 @composite_generator(
@@ -319,7 +319,7 @@ def chemotaxis(core=None) -> dict:
     return chemotaxis_document()
 ```
 
-Values to set (cross-check against `multi_cell/experiments/registry.py` first, but these are sensible if registry doesn't have one):
+Values to set (cross-check against `viva_munk/experiments/registry.py` first, but these are sensible if registry doesn't have one):
 
 | Composite | `default_n_steps` |
 |---|---|
@@ -344,12 +344,12 @@ curl -sS http://localhost:8765/api/composites | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 for c in d.get('composites', []):
-    if 'multi_cell.composites' in c.get('id', ''):
+    if 'viva_munk.composites' in c.get('id', ''):
         print(c['id'], '->', c.get('default_n_steps'))
 "
 ```
 
-Expected output: each composite prints with the curated `default_n_steps` value (e.g. `multi_cell.composites.chemotaxis -> 200`).
+Expected output: each composite prints with the curated `default_n_steps` value (e.g. `viva_munk.composites.chemotaxis -> 200`).
 
 - [ ] **Step 9: Commit.**
 
@@ -360,7 +360,7 @@ git add tests/_fixtures tests/test_composite_explorer_api.py \
 git commit -m "surface default_n_steps in /api/composites + CE pre-fill"
 
 cd ~/code/viva-munk
-git add multi_cell/composites/__init__.py
+git add viva_munk/composites/__init__.py
 git commit -m "declare default_n_steps for each composite generator"
 ```
 
@@ -1257,7 +1257,7 @@ lsof -ti tcp:8765 | xargs -r kill; sleep 1
 sleep 3
 ```
 
-Open http://localhost:8765, switch to Composite Explorer, pick `multi_cell.composites.chemotaxis`, click Test Run, wait for completion → click **Save as Study** → fill in `chemotaxis-test`, click **Create Study** → page navigates to `/studies/chemotaxis-test`.
+Open http://localhost:8765, switch to Composite Explorer, pick `viva_munk.composites.chemotaxis`, click Test Run, wait for completion → click **Save as Study** → fill in `chemotaxis-test`, click **Create Study** → page navigates to `/studies/chemotaxis-test`.
 
 Verify:
 
@@ -2000,7 +2000,7 @@ git commit -m "doc: migrate-investigations CLI usage"
 cd ~/code/pbg-superpowers && pytest -v
 cd ~/code/vivarium-dashboard && pytest -v
 cd ~/code/viva-munk && .venv/bin/python -c "
-import multi_cell  # fires register_processes + composite_generators
+import viva_munk  # fires register_processes + composite_generators
 from pbg_superpowers.composite_generator import _REGISTRY
 assert len(_REGISTRY) == 9, f'expected 9, got {len(_REGISTRY)}'
 for entry in _REGISTRY.values():

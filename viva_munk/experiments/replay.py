@@ -1,15 +1,15 @@
 """Replay a simulation from the history database to regenerate its GIF.
 
-Every run of ``python -m multi_cell.experiments.test_suite`` writes one row
+Every run of ``python -m viva_munk.experiments.test_suite`` writes one row
 per step into ``<output_dir>/history.db``, plus a ``simulations`` row that
 records the experiment name, config, and serialized composite state. This
 module uses that information to reconstruct the GIF without re-running the
 simulation.
 
 Usage:
-    python -m multi_cell.experiments.replay --list
-    python -m multi_cell.experiments.replay <simulation_id>
-    python -m multi_cell.experiments.replay <simulation_id> --out replays/
+    python -m viva_munk.experiments.replay --list
+    python -m viva_munk.experiments.replay <simulation_id>
+    python -m viva_munk.experiments.replay <simulation_id> --out replays/
 """
 import argparse
 import os
@@ -19,7 +19,7 @@ from process_bigraph.emitter import (
     list_simulations, load_history, load_simulation_metadata,
 )
 
-from multi_cell.experiments.runner import render_gif, DB_FILE
+from viva_munk.experiments.runner import render_gif, DB_FILE
 
 
 def _resolve_db_path(output_dir):

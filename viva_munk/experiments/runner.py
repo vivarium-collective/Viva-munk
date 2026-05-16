@@ -16,13 +16,13 @@ from process_bigraph.emitter import (
     mark_simulation_finished,
 )
 
-from multi_cell import core_import
-from multi_cell.experiments.registry import EXPERIMENT_REGISTRY
-from multi_cell.plots.multibody_plots import simulation_to_gif
+from viva_munk import core_import
+from viva_munk.experiments.registry import EXPERIMENT_REGISTRY
+from viva_munk.plots.multibody_plots import simulation_to_gif
 
 
 # Single shared DB file under out/ so every experiment run is recorded and
-# can be replayed later via multi_cell.experiments.replay.
+# can be replayed later via viva_munk.experiments.replay.
 DB_FILE = 'history.db'
 
 

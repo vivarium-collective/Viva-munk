@@ -2,7 +2,7 @@
 
 Each function here is a thin `@composite_generator`-decorated wrapper around
 the corresponding `*_document(config=None)` builder in
-`multi_cell.experiments.documents`. The decorator side-effect (registering
+`viva_munk.experiments.documents`. The decorator side-effect (registering
 into pbg-superpowers' `_REGISTRY`) is what makes these visible to the
 vivarium-dashboard's composite browser.
 
@@ -12,15 +12,15 @@ filling in `parameters=` on the decorator.
 """
 from pbg_superpowers.composite_generator import composite_generator
 
-from multi_cell.experiments.documents.attachment import attachment_document
-from multi_cell.experiments.documents.bending_pressure import bending_pressure_document
-from multi_cell.experiments.documents.biofilm import biofilm_document
-from multi_cell.experiments.documents.chemotaxis import chemotaxis_document
-from multi_cell.experiments.documents.daughter_machine import daughter_machine_document
-from multi_cell.experiments.documents.glucose_growth import glucose_growth_document
-from multi_cell.experiments.documents.inclusion_bodies import inclusion_bodies_document
-from multi_cell.experiments.documents.mother_machine import mother_machine_document
-from multi_cell.experiments.documents.quorum_sensing import quorum_sensing_document
+from viva_munk.experiments.documents.attachment import attachment_document
+from viva_munk.experiments.documents.bending_pressure import bending_pressure_document
+from viva_munk.experiments.documents.biofilm import biofilm_document
+from viva_munk.experiments.documents.chemotaxis import chemotaxis_document
+from viva_munk.experiments.documents.daughter_machine import daughter_machine_document
+from viva_munk.experiments.documents.glucose_growth import glucose_growth_document
+from viva_munk.experiments.documents.inclusion_bodies import inclusion_bodies_document
+from viva_munk.experiments.documents.mother_machine import mother_machine_document
+from viva_munk.experiments.documents.quorum_sensing import quorum_sensing_document
 
 
 @composite_generator(

@@ -299,7 +299,7 @@ lsof -ti tcp:8765 | xargs -r kill 2>/dev/null; sleep 1
 .venv/bin/vivarium-dashboard serve --workspace . --port 8765 > /tmp/dash.log 2>&1 &
 until curl -sS -o /dev/null -w "%{http_code}" http://localhost:8765/ 2>/dev/null | grep -q "^200$"; do sleep 0.5; done
 curl -sS -X POST http://localhost:8765/api/composite-test-run -H "Content-Type: application/json" \
-  -d '{"id":"multi_cell.composites.chemotaxis","steps":2}' \
+  -d '{"id":"viva_munk.composites.chemotaxis","steps":2}' \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print('error:', d.get('error'), '| viz keys:', list((d.get('viz_html') or {}).keys()))"
 lsof -ti tcp:8765 | xargs -r kill 2>/dev/null
 ```
@@ -339,7 +339,7 @@ def _study_ws(tmp_path, monkeypatch):
     ws.mkdir()
     (ws / "workspace.yaml").write_text(
         'schema_version: 2\nname: viva-munk\ncreated: "2026-05-14"\n'
-        'plugin_version: 0.6.1\npackage_path: multi_cell\n'
+        'plugin_version: 0.6.1\npackage_path: viva_munk\n'
     )
     sd = ws / "studies" / "s1"
     (sd / "composites").mkdir(parents=True)
@@ -347,7 +347,7 @@ def _study_ws(tmp_path, monkeypatch):
     (sd / "study.yaml").write_text(yaml.safe_dump({
         "schema_version": 3, "name": "s1", "created": "2026-05-14",
         "status": "ran", "objective": "",
-        "baseline": {"composite": "multi_cell.composites.chemotaxis",
+        "baseline": {"composite": "viva_munk.composites.chemotaxis",
                      "params": {"n_steps": 2}},
         "variants": [
             {"name": "fast", "intervention": {
@@ -1086,7 +1086,7 @@ lsof -ti tcp:8765 | xargs -r kill 2>/dev/null; sleep 1
 until curl -sS -o /dev/null -w "%{http_code}" http://localhost:8765/ 2>/dev/null | grep -q "^200$"; do sleep 0.5; done
 
 # 1. Test run → promote to Study
-RUN=$(curl -sS -X POST http://localhost:8765/api/composite-test-run -H "Content-Type: application/json" -d '{"id":"multi_cell.composites.chemotaxis","steps":2}' | python3 -c "import sys,json; print(json.load(sys.stdin).get('simulation_id',''))")
+RUN=$(curl -sS -X POST http://localhost:8765/api/composite-test-run -H "Content-Type: application/json" -d '{"id":"viva_munk.composites.chemotaxis","steps":2}' | python3 -c "import sys,json; print(json.load(sys.stdin).get('simulation_id',''))")
 curl -sS -X POST http://localhost:8765/api/study-create-from-run -H "Content-Type: application/json" -d "{\"name\":\"e2e-study\",\"objective\":\"x\",\"description\":\"\",\"source_run_id\":\"$RUN\"}" > /dev/null
 
 # 2. Detail API (was 500 on sim_name)

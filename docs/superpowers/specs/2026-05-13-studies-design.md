@@ -128,7 +128,7 @@ objective: |
   Does increasing the sensitivity parameter improve up-gradient bias
   when the gradient is shallow?
 baseline:
-  composite: multi_cell.composites.chemotaxis   # composite spec_id
+  composite: viva_munk.composites.chemotaxis   # composite spec_id
   params:                                       # baseline param overrides
     n_cells: 12
     sensitivity: 2.0
@@ -145,7 +145,7 @@ variants:
         - {op: remove, path: ['pressure']}
     document: composites/no-pressure.yaml       # materialized sidecar
 runs:
-  - run_id: multi_cell.composites.chemotaxis__1715620800__a3f2c1
+  - run_id: viva_munk.composites.chemotaxis__1715620800__a3f2c1
     variant: high-sensitivity                   # null = baseline
     label: "high-sens, seed=42"
     status: completed
@@ -208,10 +208,10 @@ into the `#ce-steps` input. User can still edit before clicking Test Run.
 If absent, keep today's hardcoded fallback of `5`.
 
 **viva-munk wiring.** Phase 1 also sets sensible per-generator defaults.
-Source-of-truth: `multi_cell/experiments/registry.py` already carries
+Source-of-truth: `viva_munk/experiments/registry.py` already carries
 curated `n_steps` per experiment; the implementation plan mechanically
 applies those to each `@composite_generator(...)` in
-`multi_cell/composites/__init__.py`.
+`viva_munk/composites/__init__.py`.
 
 **Why a separate field, not piggybacking on `parameters: {...}`?**
 `parameters` declares *composite-builder kwargs*; `n_steps` is a *runtime
@@ -247,7 +247,7 @@ Request:
   "name":         "chemotaxis-gradient-sweep",
   "objective":   "Does sensitivity restore up-gradient bias?",
   "description": "",
-  "source_run_id": "multi_cell.composites.chemotaxis__1715620800__a3f2c1"
+  "source_run_id": "viva_munk.composites.chemotaxis__1715620800__a3f2c1"
 }
 ```
 
@@ -323,7 +323,7 @@ failure leaves the workspace unchanged.
 │ <editable markdown — the research question>                     │
 └─────────────────────────────────────────────────────────────────┘
 ┌── Baseline ────────────────────────────────────────────────────┐
-│ Composite: multi_cell.composites.chemotaxis                     │
+│ Composite: viva_munk.composites.chemotaxis                     │
 │ Params table (read-only): n_cells: 12, sensitivity: 2.0, ...    │
 │ [Run baseline]   [Edit params]                                  │
 └─────────────────────────────────────────────────────────────────┘

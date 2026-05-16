@@ -69,7 +69,7 @@ class CellFieldExchange(Process):
     Runs as a Process (not a Step) so it ticks every interval like the rest
     of the document, guaranteeing cell.local is refreshed every step and the
     field is debited every step. Mirrors spatio-flux's ParticleExchange but
-    keyed to multi_cell's `pymunk_agent` cells using `location`.
+    keyed to viva_munk's `pymunk_agent` cells using `location`.
     """
 
     config_schema = {
