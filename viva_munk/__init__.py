@@ -66,7 +66,11 @@ def _patch_composite_realize_on_sentinels():
     def apply_updates_with_realize(self, updates):
         update_paths = _original_apply_updates(self, updates)
         if getattr(self, '_last_apply_structural', False):
-            self.schema, self.state = self.core.realize(self.schema, self.state)
+            # bigraph_schema.core.realize now returns a 3-tuple
+            # (schema, state, escape_merges). At top-level realize there
+            # is nothing above us for merges to escape to, so discard.
+            self.schema, self.state, _escape_merges = self.core.realize(
+                self.schema, self.state)
             self.find_instance_paths(self.state)
             self._build_view_project_cache()
         return update_paths
