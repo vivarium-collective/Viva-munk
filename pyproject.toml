@@ -29,6 +29,19 @@ dependencies = [
     "matplotlib",
     "Pillow",
     "plum-dispatch",
+    # viva_munk/visualizations/* subclass pbg_superpowers.visualization.Visualization.
+    "pbg-superpowers",
+    # NOTE on spatio-flux: viva_munk/__init__.py imports
+    # `from spatio_flux.visualizations import (...)` at module-import
+    # time, but no PyPI-published spatio-flux release ships a
+    # `visualizations/` submodule (it was dropped in 1.4 in favour of
+    # `plots/`; the dev 1.0.0 still has it but is not on PyPI). Listing
+    # `spatio-flux` here would let pip install succeed but the import
+    # would still fail. Tracked separately: either refactor viva_munk's
+    # __init__ to use spatio_flux.plots, vendor what we need, or
+    # publish a 1.0.x patch with the legacy visualizations layout.
+    # Until then, viva-munk is installable only against a local
+    # editable spatio-flux checkout that has visualizations/.
 ]
 
 [project.optional-dependencies]
