@@ -56,14 +56,16 @@ dev = [
 Homepage = "https://github.com/vivarium-collective/Viva-munk"
 Repository = "https://github.com/vivarium-collective/Viva-munk"
 
-[tool.setuptools]
-packages = [
-    "viva_munk",
-    "viva_munk.processes",
-    "viva_munk.experiments",
-    "viva_munk.plots",
-    "viva_munk.types",
-]
+# Auto-discover every viva_munk subpackage at build time. The hand-
+# maintained list previously skipped `viva_munk.composites` AND
+# `viva_munk.visualizations`, so the published wheel didn't include
+# those directories at all and `import viva_munk` broke on any clean
+# install (the package's own __init__.py imports them). The
+# auto-discovery pattern matches what spatio-flux does.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["viva_munk*"]
+exclude = ["tests*", "docs*", "studies*"]
 
 # NOTE: this package previously declared a [tool.uv.sources] override
 # pointing process-bigraph at `../process-bigraph` (editable). That
