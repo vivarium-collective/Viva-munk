@@ -65,9 +65,15 @@ packages = [
     "viva_munk.types",
 ]
 
-# sqlemitter branch: use the SQLiteEmitter from the local process-bigraph
-# checkout (sqlite-emitter branch). To activate, run:
-#   uv sync  (if using uv)
-#   or: pip install -e ../process-bigraph
-[tool.uv.sources]
-process-bigraph = { path = "../process-bigraph", editable = true }
+# NOTE: this package previously declared a [tool.uv.sources] override
+# pointing process-bigraph at `../process-bigraph` (editable). That
+# section is dev-only convenience for working in a sibling checkout
+# layout — but it leaks into downstream consumers when viva-munk is
+# pulled as a git dependency, because uv resolves the transitive
+# source path as `subdirectory=../process-bigraph` of the git URL,
+# which doesn't exist. Removed for now; if you need the local
+# editable checkout, install it explicitly:
+#
+#   pip install -e ../process-bigraph
+#
+# or add the override in YOUR project's pyproject.toml (not here).
