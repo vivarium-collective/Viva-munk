@@ -13,7 +13,7 @@ AdderGrowDivide  — length-based exponential growth with the "adder" division
 """
 import math, random
 from process_bigraph import Process
-from multi_cell.processes.multibody import build_microbe, daughter_locations
+from viva_munk.processes.multibody import build_microbe, daughter_locations
 
 
 # =====================================================================

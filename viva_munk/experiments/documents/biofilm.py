@@ -1,51 +1,50 @@
-"""daughter_machine — single cell in a chamber with an absorbing right wall."""
+"""biofilm — cells in a chamber seeded with passive particles ("with_particles")."""
 from process_bigraph.emitter import emitter_from_wires
 
-from multi_cell.processes.multibody import make_initial_state
-from multi_cell.processes.grow_divide import add_grow_divide_to_agents
-from multi_cell.processes.remove_crossing import make_remove_crossing_process
-from multi_cell.visualizations import (
+from viva_munk.processes.multibody import make_initial_state
+from viva_munk.processes.grow_divide import add_adder_grow_divide_to_agents
+from viva_munk.visualizations import (
     make_cell_mass_traces_step,
     make_multibody_viz_step,
     make_viz_stores,
 )
 
 
-def daughter_machine_document(config=None):
-    """A single cell growing in an environment with an absorbing right wall.
-
-    Cells that drift past the right boundary are removed by RemoveCrossing,
-    so the colony tends to grow leftward as daughters are pushed out.
-    """
+def biofilm_document(config=None):
+    """Cells growing in an environment seeded with passive particles of varying sizes."""
     config = config or {}
     env_size = config.get('env_size', 30)
     interval = config.get('interval', 30.0)
-    growth_rate = config.get('growth_rate', 0.000289)  # ln(2)/2400 ~ 40 min doubling
     cell_radius = config.get('cell_radius', 0.5)
     cell_length = config.get('cell_length', 2.0)
     density = config.get('density', 0.02)
-    flow_x = config.get('flow_x', env_size * 0.85)  # remove past 85% of width
-    division_threshold = config.get('division_threshold', None)
-    if division_threshold is None:
-        division_threshold = density * (2 * cell_radius) * (cell_length * 2.0)
+    n_cells = config.get('n_cells', 3)
+
+    eps_radius = config.get('eps_radius', 0.15)
+    n_initial_particles = config.get('n_initial_particles', 0)
+    # Particle size distribution. Default 'log_uniform' gives a scale-free
+    # spread of radii — equal density per decade — so the chamber gets a few
+    # large boulders mixed in with many small grains.
+    particle_radius_min = config.get('particle_radius_min', eps_radius)
+    particle_radius_max = config.get('particle_radius_max', eps_radius * 30)
+    particle_radius_dist = config.get('particle_radius_dist', 'log_uniform')
 
     initial_state = make_initial_state(
-        n_microbes=1,
-        n_particles=0,
+        n_microbes=n_cells,
+        n_particles=n_initial_particles,
         env_size=env_size,
+        particle_radius_range=(particle_radius_min, particle_radius_max),
+        particle_radius_dist=particle_radius_dist,
         microbe_length_range=(cell_length, cell_length),
         microbe_radius_range=(cell_radius, cell_radius),
         microbe_mass_density=density,
     )
 
-    add_grow_divide_to_agents(
+    add_adder_grow_divide_to_agents(
         initial_state,
         agents_key='cells',
         config={
             'agents_key': 'cells',
-            'rate': growth_rate,
-            'threshold': division_threshold,
-            'mutate': True,
         },
     )
 
@@ -57,7 +56,6 @@ def daughter_machine_document(config=None):
             'address': 'local:PymunkProcess',
             'config': {
                 'env_size': env_size,
-                'elasticity': 0.1,
             },
             'interval': interval,
             'inputs': {
@@ -69,20 +67,16 @@ def daughter_machine_document(config=None):
                 'circle_particles': ['particles'],
             },
         },
-        'remove_crossing': make_remove_crossing_process(
-            x_max=flow_x,
-            agents_key='cells',
-        ),
         'stores': make_viz_stores(),
         'multibody_viz': make_multibody_viz_step(
-            title='daughter_machine',
+            title='biofilm',
             env_width=env_size,
             env_height=env_size,
             figure_width=6.0,
             figure_height=6.0,
         ),
         'cell_mass_traces': make_cell_mass_traces_step(
-            title='daughter_machine — cell mass',
+            title='biofilm — cell mass',
         ),
         'emitter': emitter_from_wires({
             'agents': ['cells'],

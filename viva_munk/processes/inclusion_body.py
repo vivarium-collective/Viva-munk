@@ -23,7 +23,7 @@ import math
 
 from process_bigraph import Process
 
-from multi_cell.processes.multibody import daughter_locations
+from viva_munk.processes.multibody import daughter_locations
 
 
 def _seed_bending_polyline(loc, angle, L):

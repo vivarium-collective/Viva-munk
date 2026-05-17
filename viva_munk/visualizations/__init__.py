@@ -5,8 +5,8 @@ consumes per-step state via wires (like an emitter), accumulates frames
 internally, and returns ``{'html': '<rendered>'}`` each update.
 
 ``MultibodyVizStep`` delegates per-frame rendering to ``GifRenderer``
-from ``multi_cell.plots.multibody_plots`` — the same renderer the
-post-run pipeline (``multi_cell.experiments.runner.simulation_to_gif``)
+from ``viva_munk.plots.multibody_plots`` — the same renderer the
+post-run pipeline (``viva_munk.experiments.runner.simulation_to_gif``)
 uses for the on-disk GIFs in ``out/``. Frames are accumulated in the
 Step instance and re-encoded as an inline animated GIF data URI on
 every ``update()``; the GIF assembly uses the same quantize + disposal
@@ -28,7 +28,7 @@ from PIL import Image
 
 from pbg_superpowers.visualization import Visualization
 
-from multi_cell.plots.multibody_plots import GifRenderer
+from viva_munk.plots.multibody_plots import GifRenderer
 
 
 # Color modes that don't require history pre-scan — usable in streaming.
@@ -370,7 +370,7 @@ def make_multibody_viz_step(
 # Per-cell mass-over-time line plot. Lives in its own module so the
 # GifRenderer-based MultibodyVizStep stays focused on the streaming-GIF
 # concern.
-from multi_cell.visualizations.cell_mass_traces import CellMassTraces  # noqa: E402,F401
+from viva_munk.visualizations.cell_mass_traces import CellMassTraces  # noqa: E402,F401
 
 
 def make_cell_mass_traces_step(

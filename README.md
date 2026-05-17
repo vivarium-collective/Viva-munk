@@ -1,7 +1,7 @@
-# multi-cell
+# viva-munk
 
-[![PyPI version](https://img.shields.io/pypi/v/multi-cell.svg)](https://pypi.org/project/multi-cell/)
-[![Python versions](https://img.shields.io/pypi/pyversions/multi-cell.svg)](https://pypi.org/project/multi-cell/)
+[![PyPI version](https://img.shields.io/pypi/v/viva-munk.svg)](https://pypi.org/project/viva-munk/)
+[![Python versions](https://img.shields.io/pypi/pyversions/viva-munk.svg)](https://pypi.org/project/viva-munk/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Multi-cell simulations with 2D physics, built on [process-bigraph](https://github.com/vivarium-collective/process-bigraph) and [pymunk](https://www.pymunk.org/).
@@ -19,16 +19,16 @@ Default parameters are calibrated to *E. coli* proportions (~1 μm wide, ~2 μm 
 Requires Python 3.11+.
 
 ```bash
-pip install multi-cell
+pip install viva-munk
 ```
 
 To use as a library:
 
 ```python
-from multi_cell import core_import
+from viva_munk import core_import
 from process_bigraph import Composite
 
-core = core_import()  # registers multi_cell types and processes
+core = core_import()  # registers viva_munk types and processes
 # ... build a spec dict and run: Composite(spec, core=core)
 ```
 
@@ -42,16 +42,16 @@ cd Viva-munk
 pip install -e .[dev]
 
 # Run all experiments and open the HTML report
-python -m multi_cell.experiments.test_suite
+python -m viva_munk.experiments.test_suite
 
 # Run without auto-opening the browser
-python -m multi_cell.experiments.test_suite --no-open
+python -m viva_munk.experiments.test_suite --no-open
 ```
 
 ## Architecture
 
 ```
-multi_cell/
+viva_munk/
   pymunk_agent_type.py       # Custom PymunkAgent type with optimized dispatch
   types/
     positive.py              # PositiveFloat / PositiveArray / Concentration / SetFloat
@@ -84,11 +84,11 @@ multi_cell/
 
 `pymunk_agent` is a `Node`-subclass type with hand-optimized `apply`/`reconcile`/`realize`/`check` dispatch (no per-field plum dispatch on the hot path). It carries the geometric and physical state of one cell (mass, radius, length, location, velocity, …) plus optional fields used by downstream processes (`polyline`, `attached`, `pressure`, `local`, `exchange`).
 
-The `multi_cell.types.positive` module provides minimal `PositiveFloat`, `PositiveArray`, `Concentration`, and `SetFloat` types for the field state, accumulator-with-clamp semantics adapted from [spatio-flux](https://github.com/vivarium-collective/spatio-flux).
+The `viva_munk.types.positive` module provides minimal `PositiveFloat`, `PositiveArray`, `Concentration`, and `SetFloat` types for the field state, accumulator-with-clamp semantics adapted from [spatio-flux](https://github.com/vivarium-collective/spatio-flux).
 
 ## Experiments
 
-The current registry (`multi_cell/experiments/test_suite.py`):
+The current registry (`viva_munk/experiments/test_suite.py`):
 
 - **daughter_machine** — single cell grows in an open chamber with an absorbing right wall.
 - **mother_machine** — narrow dead-end channels (~1.5 μm wide); cells grow vertically and are removed when they reach the flow channel.

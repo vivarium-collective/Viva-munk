@@ -1,9 +1,9 @@
 """Command-line entry point for the multi-cell experiment test suite.
 
 Usage:
-    python -m multi_cell.experiments.test_suite                # all experiments, parallel
-    python -m multi_cell.experiments.test_suite --serial       # one at a time
-    python -m multi_cell.experiments.test_suite --tests glucose_growth attachment
+    python -m viva_munk.experiments.test_suite                # all experiments, parallel
+    python -m viva_munk.experiments.test_suite --serial       # one at a time
+    python -m viva_munk.experiments.test_suite --tests glucose_growth attachment
 """
 import argparse
 import concurrent.futures as _futures
@@ -11,9 +11,9 @@ import multiprocessing as _mp
 import os
 import time
 
-from multi_cell.experiments.registry import EXPERIMENT_REGISTRY
-from multi_cell.experiments.runner import run_experiment, load_cached_experiment
-from multi_cell.experiments.report import generate_html_report
+from viva_munk.experiments.registry import EXPERIMENT_REGISTRY
+from viva_munk.experiments.runner import run_experiment, load_cached_experiment
+from viva_munk.experiments.report import generate_html_report
 
 
 def _run_one_in_subprocess(name_and_output):

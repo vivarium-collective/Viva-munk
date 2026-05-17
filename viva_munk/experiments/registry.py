@@ -6,7 +6,7 @@ and how they're configured. Each entry is a dict with keys:
     config       — experiment-specific configuration kwargs
     description  — human-readable text shown in the HTML report
 """
-from multi_cell.experiments.documents import (
+from viva_munk.experiments.documents import (
     daughter_machine_document,
     mother_machine_document,
     biofilm_document,

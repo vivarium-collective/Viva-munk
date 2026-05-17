@@ -20,10 +20,10 @@ import math
 
 from process_bigraph.emitter import emitter_from_wires
 
-from multi_cell.processes.multibody import build_microbe, make_rng
-from multi_cell.processes.inclusion_body import make_ib_colony_process
-from multi_cell.processes.pressure import make_pressure_process
-from multi_cell.visualizations import (
+from viva_munk.processes.multibody import build_microbe, make_rng
+from viva_munk.processes.inclusion_body import make_ib_colony_process
+from viva_munk.processes.pressure import make_pressure_process
+from viva_munk.visualizations import (
     make_cell_mass_traces_step,
     make_multibody_viz_step,
     make_viz_stores,

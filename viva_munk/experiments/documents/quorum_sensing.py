@@ -7,11 +7,11 @@ import math
 import numpy as np
 from process_bigraph.emitter import emitter_from_wires
 
-from multi_cell.processes.multibody import make_rng
-from multi_cell.processes.cell_field_exchange import make_cell_field_exchange_process
-from multi_cell.processes.quorum_sensing import add_quorum_sensing_to_agents
-from multi_cell.processes.field_decay import make_field_decay_process
-from multi_cell.visualizations import (
+from viva_munk.processes.multibody import make_rng
+from viva_munk.processes.cell_field_exchange import make_cell_field_exchange_process
+from viva_munk.processes.quorum_sensing import add_quorum_sensing_to_agents
+from viva_munk.processes.field_decay import make_field_decay_process
+from viva_munk.visualizations import (
     make_cell_mass_traces_step,
     make_multibody_viz_step,
     make_viz_stores,

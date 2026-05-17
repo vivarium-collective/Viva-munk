@@ -1,170 +1,51 @@
+"""Backwards-compatibility shim for the multi_cell → viva_munk rename.
+
+The Python package was renamed from ``multi_cell`` to ``viva_munk`` (so
+the import name matches the PyPI/repo name viva-munk). This shim keeps
+``from multi_cell.X import Y`` working for downstream consumers while
+they migrate, with a DeprecationWarning on first use.
+
+Remove this module in a future release once all known consumers
+(v2ecoli, pbg-template-derived workspaces) have moved to ``viva_munk``.
+
+Mechanism: install ``viva_munk`` and every already-imported submodule
+into ``sys.modules`` under the legacy ``multi_cell.*`` names, then
+re-export the public surface here so ``from multi_cell import X``
+resolves the same name as ``from viva_munk import X``.
 """
-Registration-related functions
-"""
+from __future__ import annotations
 
-__version__ = "0.0.1"
+import sys
+import warnings as _warnings
 
-from process_bigraph import register_types as pb_register_types
-from process_bigraph.types.process import register_types as pb_types_register
-from process_bigraph.composite import Composite
-from process_bigraph.emitter import RAMEmitter, SQLiteEmitter
-from bigraph_schema.core import Core, BASE_TYPES
-from bigraph_viz import register_types as viz_register_types
+import viva_munk as _viva_munk
 
-from multi_cell.processes.multibody import PymunkProcess
-from multi_cell.processes.grow_divide import GrowDivide, AdderGrowDivide
-from multi_cell.processes.remove_crossing import RemoveCrossing
-from multi_cell.processes.secrete_eps import SecreteEPS
-from multi_cell.processes.pressure import Pressure
-from multi_cell.processes.diffusion_advection import DiffusionAdvection
-from multi_cell.processes.cell_field_exchange import CellFieldExchange
-from multi_cell.processes.chemotaxis import Chemotaxis
-from multi_cell.processes.inclusion_body import InclusionBody, IBColony
-from multi_cell.processes.quorum_sensing import QuorumSensing
-from multi_cell.processes.field_decay import FieldDecay
-# Spatio-flux processes referenced by spatio_flux.composites.particles.* —
-# brownian_particles needs both BrownianMovement and ManageBoundaries to
-# resolve their `local:` addresses at run time.
-from spatio_flux.processes.particles import BrownianMovement, ManageBoundaries
-# Spatio-flux Visualization Steps — heatmaps, GIFs, snapshot grids, and
-# emitter-driven timeseries. Registered so dashboard users can attach them
-# to any composite via the Visualizations tab.
-from spatio_flux.visualizations import (
-    FieldHeatmap,
-    FieldAnimationGif,
-    FieldSnapshotsGrid,
-    ParticleTraces,
-    TestSuiteTimeSeries,
+_warnings.warn(
+    "The 'multi_cell' import root was renamed to 'viva_munk'. "
+    "Update `from multi_cell.X import Y` to `from viva_munk.X import Y`. "
+    "This compatibility shim will be removed in a future release.",
+    DeprecationWarning,
+    stacklevel=2,
 )
-from multi_cell.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
-from multi_cell.types import positive_types
-from multi_cell.visualizations import MultibodyVizStep, CellMassTraces
 
-# Register custom dispatches once at module import
-register_pymunk_agent_dispatches()
+# Alias the top-level module so `import multi_cell` and identity checks
+# like `sys.modules['multi_cell']` resolve to viva_munk's loaded module.
+sys.modules[__name__] = _viva_munk
 
+# Mirror every already-loaded viva_munk.* submodule under multi_cell.*
+# so existing `from multi_cell.processes.multibody import PymunkProcess`
+# imports resolve to the same module objects (no double-import, no
+# duplicate registry entries).
+for _full, _mod in list(sys.modules.items()):
+    if _full == "viva_munk" or _full.startswith("viva_munk."):
+        _alias = "multi_cell" + _full[len("viva_munk"):]
+        sys.modules.setdefault(_alias, _mod)
 
-def _patch_composite_realize_on_sentinels():
-    """Ensure Composite re-realizes newly-added subtrees on `_add`/`_remove`.
+# Re-export viva_munk's public attributes so attribute access on the
+# shim module (when someone has held a reference to it from before the
+# sys.modules swap) also works.
+for _name in dir(_viva_munk):
+    if not _name.startswith("_"):
+        globals()[_name] = getattr(_viva_munk, _name)
 
-    `Map.apply` drops `_add` entries straight into state without calling
-    the value type's realize path, and `Composite.apply_updates` only
-    triggers `core.realize` on schema-level merges — not on structural
-    sentinels. So embedded process specs (e.g. `grow_divide` on a freshly
-    divided daughter) are never instantiated: the spec is visible in
-    state but its `'instance'` slot stays unset and the Process class
-    never runs on that cell. Result: lineages freeze after the first
-    division in every experiment that uses per-cell embedded processes.
-
-    The fix is a one-line amend: when structural sentinels are detected,
-    run `core.realize` (which follows `Link`/process specs and creates
-    instances via `realize_link`) before `find_instance_paths` scans
-    state for them.
-    """
-    _original_apply_updates = Composite.apply_updates
-
-    def apply_updates_with_realize(self, updates):
-        update_paths = _original_apply_updates(self, updates)
-        if getattr(self, '_last_apply_structural', False):
-            self.schema, self.state = self.core.realize(self.schema, self.state)
-            self.find_instance_paths(self.state)
-            self._build_view_project_cache()
-        return update_paths
-
-    Composite.apply_updates = apply_updates_with_realize
-
-
-_patch_composite_realize_on_sentinels()
-
-
-def _patch_list_apply_tuple_update():
-    """Make ``apply(schema: List, state: list, update: tuple)`` do
-    element-wise add when shape + numeric content match.
-
-    JSON serialization drops the tuple type, so a state that started as a
-    ``(x, y)`` tuple becomes a ``[x, y]`` list and schema inference picks
-    ``List(_element=Float)`` instead of ``Tuple(_values=[Float, Float])``.
-    The default ``apply(List)`` then does ``state + update`` — concat, not
-    element-wise — and crashes on the ``list + tuple`` type mismatch the
-    moment a process emits a tuple delta (``PymunkProcess`` does this for
-    ``location``/``velocity`` every tick). Pin element-wise behavior for
-    the JSON-roundtripped case so the dashboard's subprocess flow works.
-    """
-    from plum import dispatch
-    from bigraph_schema.schema import List
-    from bigraph_schema.methods.apply import apply as _apply
-
-    @_apply.dispatch
-    def apply_list_with_tuple_update(schema: List, state: list, update: tuple, path):
-        if len(state) == len(update) and all(
-            isinstance(s, (int, float)) for s in state
-        ):
-            return [s + u for s, u in zip(state, update)], []
-        # Length mismatch or non-numeric: fall back to concat (matches
-        # the default ``state + list(update)`` semantics).
-        return list(state) + list(update), []
-
-
-_patch_list_apply_tuple_update()
-
-
-from multi_cell import composites as _composites  # noqa: E402,F401 — fires @composite_generator side-effects
-
-
-def register_pymunk_types(core):
-    # Use the optimized PymunkAgent Node subclass instead of a dict schema.
-    # This eliminates per-field dispatch overhead in apply/reconcile/realize.
-    core.register_type('pymunk_agent', PymunkAgent())
-    # NOTE: multi_cell.types.positive_types overlaps with spatio_flux's on
-    # ('positive_float', 'positive_array', 'concentration', 'set_float') —
-    # multi_cell uses instances (PositiveFloat()), spatio_flux uses classes
-    # (PositiveFloat). Registering both forms triggers a resolve conflict in
-    # bigraph_schema. spatio_flux's set is a strict superset (adds count,
-    # mass, delta_conc), so we let spatio_flux_register_types own these
-    # types in core_import() and skip the duplicate loop here.
-
-
-def register_processes(core):
-    core.register_link('PymunkProcess', PymunkProcess)
-    core.register_link('GrowDivide', GrowDivide)
-    core.register_link('AdderGrowDivide', AdderGrowDivide)
-    core.register_link('RemoveCrossing', RemoveCrossing)
-    core.register_link('SecreteEPS', SecreteEPS)
-    core.register_link('Pressure', Pressure)
-    core.register_link('DiffusionAdvection', DiffusionAdvection)
-    core.register_link('CellFieldExchange', CellFieldExchange)
-    core.register_link('Chemotaxis', Chemotaxis)
-    core.register_link('InclusionBody', InclusionBody)
-    core.register_link('IBColony', IBColony)
-    core.register_link('QuorumSensing', QuorumSensing)
-    core.register_link('FieldDecay', FieldDecay)
-    core.register_link('BrownianMovement', BrownianMovement)
-    core.register_link('ManageBoundaries', ManageBoundaries)
-    core.register_link('MultibodyVizStep', MultibodyVizStep)
-    core.register_link('CellMassTraces', CellMassTraces)
-    # Spatio-flux Visualization Steps
-    core.register_link('FieldHeatmap', FieldHeatmap)
-    core.register_link('FieldAnimationGif', FieldAnimationGif)
-    core.register_link('FieldSnapshotsGrid', FieldSnapshotsGrid)
-    core.register_link('ParticleTraces', ParticleTraces)
-    core.register_link('TestSuiteTimeSeries', TestSuiteTimeSeries)
-    core.register_link('Composite', Composite)
-    core.register_link('RAMEmitter', RAMEmitter)
-    core.register_link('SQLiteEmitter', SQLiteEmitter)
-
-
-def core_import(core=None, config=None):
-    if not core:
-        core = Core(BASE_TYPES)
-    pb_types_register(core)
-    pb_register_types(core)
-    viz_register_types(core)
-    # Spatio-flux types (particle, position, bounds, fields, ...) are
-    # referenced by spatio_flux.composites.particles.* and other composites
-    # used in this workspace. Their Process classes (registered below) declare
-    # ports like 'map[particle]' that won't resolve without these types.
-    from spatio_flux import register_types as spatio_flux_register_types
-    spatio_flux_register_types(core)
-    register_pymunk_types(core)
-    register_processes(core)
-    return core
+del _full, _mod, _alias, _name, _viva_munk, _warnings, sys

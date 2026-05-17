@@ -1,5 +1,5 @@
-"""Custom type definitions for multi_cell."""
-from multi_cell.types.positive import (
+"""Custom type definitions for viva_munk."""
+from viva_munk.types.positive import (
     PositiveFloat,
     PositiveArray,
     Concentration,
