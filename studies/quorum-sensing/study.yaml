@@ -1,0 +1,84 @@
+# quorum-sensing/study.yaml — schema v4
+# One study exercising the `quorum_sensing` composite from the viva-munk report.
+schema_version: 4
+name: quorum-sensing
+title: "Quorum Sensing"
+created: '2026-06-02'
+status: complete
+design_status: complete
+implementation_status: complete
+simulation_status: ran
+phase: Evaluate
+
+question: |
+  Does autoinducer feedback switch a dense colony ON via Hill activation?
+
+study_card:
+  goal: "Show density-dependent autoinducer signaling: cells switch ON above a local threshold."
+  mechanism: "DiffusionAdvection + FieldDecay (autoinducer) + CellFieldExchange (secretion/sensing) + QuorumSensing (Hill activation, secretion ramp)."
+  expected_result: "Dense clusters accumulate autoinducer past the Hill threshold and switch ON (colour change); sparse regions stay OFF."
+  main_expert_question: "Are the Hill coefficient/threshold and decay-set coupling length representative of a real QS circuit?"
+
+biological_summary: |
+  Quorum sensing lets bacteria coordinate behaviour by population density. Cells secrete a diffusible autoinducer that also decays (setting a spatial coupling length); when the local concentration exceeds a Hill-shaped threshold, cells switch to an activated state and ramp up secretion in positive feedback. Dense clusters light up while isolated cells stay off.
+
+report:
+  title: "Quorum Sensing — multi-cell simulation"
+  verdict: passing-with-caveats
+  confidence: medium
+  evidence_quality: aspirational
+  objective: |
+    Does autoinducer feedback switch a dense colony ON via Hill activation?
+  conclusion: |
+    The simulation runs end-to-end and qualitatively reproduces the corresponding panel
+    from the published demo report. Behaviour is not yet quantitatively calibrated to
+    literature targets (see caveat).
+  caveat: |
+    Qualitative reproduction only — parameters use the demo defaults and have not been
+    fit to experimental measurements.
+
+readouts:
+  - "local autoinducer"
+  - "fraction of ON cells"
+  - "ON/OFF spatial pattern"
+
+# Runs the `quorum_sensing` composite; the simulation GIF is rendered post-hoc from the
+# emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+baseline:
+  - name: baseline
+    composite: viva_munk.composites.quorum_sensing
+    params: {}
+
+variants:
+  - name: reference
+    base_composite: baseline
+    parameter_overrides: {}
+    description: "Published demo defaults (baseline parameters)."
+
+# Build tab: baseline composite + (no) perturbations.
+conditions:
+  baseline:
+    composite: viva_munk.composites.quorum_sensing
+    params: {}
+  variants: []
+
+# Simulations tab: the completed baseline run.
+simulation_set:
+  - name: baseline
+    kind: single
+    status: ran
+    base_model: baseline
+    duration_steps: 901
+    seeds: 1
+    metrics:
+      - "local autoinducer"
+      - "fraction of ON cells"
+      - "ON/OFF spatial pattern"
+    pass_fail_tests: []
+
+runs:
+  - name: baseline
+    run_id: viva_munk.composites.quorum_sensing__1780378333__fec421
+    composite: baseline
+    status: completed
+    n_steps: 901

@@ -1,0 +1,84 @@
+# biofilm/study.yaml — schema v4
+# One study exercising the `biofilm` composite from the viva-munk report.
+schema_version: 4
+name: biofilm
+title: "Biofilm"
+created: '2026-06-02'
+status: complete
+design_status: complete
+implementation_status: complete
+simulation_status: ran
+phase: Evaluate
+
+question: |
+  How does a colony develop under combined growth, EPS, and pressure dynamics?
+
+study_card:
+  goal: "Show emergent colony / biofilm architecture from many interacting cells."
+  mechanism: "PymunkProcess + AdderGrowDivide over many cells (with scale-free passive particles)."
+  expected_result: "A growing, mechanically-interacting colony with a realistic packing morphology."
+  main_expert_question: "Does the colony morphology and packing density match early biofilm microscopy?"
+
+biological_summary: |
+  A biofilm is a structured, surface-associated community. This composite grows many cells together under physical contact, optionally seeded with scale-free passive particles, to show how division plus mechanical interaction produce emergent colony architecture.
+
+report:
+  title: "Biofilm — multi-cell simulation"
+  verdict: passing-with-caveats
+  confidence: medium
+  evidence_quality: aspirational
+  objective: |
+    How does a colony develop under combined growth, EPS, and pressure dynamics?
+  conclusion: |
+    The simulation runs end-to-end and qualitatively reproduces the corresponding panel
+    from the published demo report. Behaviour is not yet quantitatively calibrated to
+    literature targets (see caveat).
+  caveat: |
+    Qualitative reproduction only — parameters use the demo defaults and have not been
+    fit to experimental measurements.
+
+readouts:
+  - "colony cell count"
+  - "packing density"
+  - "spatial extent"
+
+# Runs the `biofilm` composite; the simulation GIF is rendered post-hoc from the
+# emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+baseline:
+  - name: baseline
+    composite: viva_munk.composites.biofilm
+    params: {}
+
+variants:
+  - name: reference
+    base_composite: baseline
+    parameter_overrides: {}
+    description: "Published demo defaults (baseline parameters)."
+
+# Build tab: baseline composite + (no) perturbations.
+conditions:
+  baseline:
+    composite: viva_munk.composites.biofilm
+    params: {}
+  variants: []
+
+# Simulations tab: the completed baseline run.
+simulation_set:
+  - name: baseline
+    kind: single
+    status: ran
+    base_model: baseline
+    duration_steps: 481
+    seeds: 1
+    metrics:
+      - "colony cell count"
+      - "packing density"
+      - "spatial extent"
+    pass_fail_tests: []
+
+runs:
+  - name: baseline
+    run_id: viva_munk.composites.biofilm__1780377770__1df162
+    composite: baseline
+    status: completed
+    n_steps: 481

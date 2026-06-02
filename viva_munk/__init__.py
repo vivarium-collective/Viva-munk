@@ -22,20 +22,6 @@ from viva_munk.processes.chemotaxis import Chemotaxis
 from viva_munk.processes.inclusion_body import InclusionBody, IBColony
 from viva_munk.processes.quorum_sensing import QuorumSensing
 from viva_munk.processes.field_decay import FieldDecay
-# Spatio-flux processes referenced by spatio_flux.composites.particles.* —
-# brownian_particles needs both BrownianMovement and ManageBoundaries to
-# resolve their `local:` addresses at run time.
-from spatio_flux.processes.particles import BrownianMovement, ManageBoundaries
-# Spatio-flux Visualization Steps — heatmaps, GIFs, snapshot grids, and
-# emitter-driven timeseries. Registered so dashboard users can attach them
-# to any composite via the Visualizations tab.
-from spatio_flux.visualizations import (
-    FieldHeatmap,
-    FieldAnimationGif,
-    FieldSnapshotsGrid,
-    ParticleTraces,
-    TestSuiteTimeSeries,
-)
 from viva_munk.pymunk_agent_type import PymunkAgent, register_pymunk_agent_dispatches
 from viva_munk.types import positive_types
 from viva_munk.visualizations import MultibodyVizStep, CellMassTraces
@@ -119,13 +105,15 @@ def register_pymunk_types(core):
     # Use the optimized PymunkAgent Node subclass instead of a dict schema.
     # This eliminates per-field dispatch overhead in apply/reconcile/realize.
     core.register_type('pymunk_agent', PymunkAgent())
-    # NOTE: viva_munk.types.positive_types overlaps with spatio_flux's on
-    # ('positive_float', 'positive_array', 'concentration', 'set_float') —
-    # viva_munk uses instances (PositiveFloat()), spatio_flux uses classes
-    # (PositiveFloat). Registering both forms triggers a resolve conflict in
-    # bigraph_schema. spatio_flux's set is a strict superset (adds count,
-    # mass, delta_conc), so we let spatio_flux_register_types own these
-    # types in core_import() and skip the duplicate loop here.
+    # viva_munk owns its positive numeric types ('positive_float',
+    # 'positive_array', 'concentration', 'set_float') — used by the
+    # concentration-field processes (e.g. CellFieldExchange,
+    # DiffusionAdvection). Previously these were deferred to
+    # spatio_flux_register_types to avoid a duplicate-registration
+    # conflict; with spatio_flux removed there is no conflict, so we
+    # register them here.
+    for type_name, type_instance in positive_types.items():
+        core.register_type(type_name, type_instance)
 
 
 def register_processes(core):
@@ -142,16 +130,8 @@ def register_processes(core):
     core.register_link('IBColony', IBColony)
     core.register_link('QuorumSensing', QuorumSensing)
     core.register_link('FieldDecay', FieldDecay)
-    core.register_link('BrownianMovement', BrownianMovement)
-    core.register_link('ManageBoundaries', ManageBoundaries)
     core.register_link('MultibodyVizStep', MultibodyVizStep)
     core.register_link('CellMassTraces', CellMassTraces)
-    # Spatio-flux Visualization Steps
-    core.register_link('FieldHeatmap', FieldHeatmap)
-    core.register_link('FieldAnimationGif', FieldAnimationGif)
-    core.register_link('FieldSnapshotsGrid', FieldSnapshotsGrid)
-    core.register_link('ParticleTraces', ParticleTraces)
-    core.register_link('TestSuiteTimeSeries', TestSuiteTimeSeries)
     core.register_link('Composite', Composite)
     core.register_link('RAMEmitter', RAMEmitter)
     core.register_link('SQLiteEmitter', SQLiteEmitter)
@@ -163,12 +143,6 @@ def core_import(core=None, config=None):
     pb_types_register(core)
     pb_register_types(core)
     viz_register_types(core)
-    # Spatio-flux types (particle, position, bounds, fields, ...) are
-    # referenced by spatio_flux.composites.particles.* and other composites
-    # used in this workspace. Their Process classes (registered below) declare
-    # ports like 'map[particle]' that won't resolve without these types.
-    from spatio_flux import register_types as spatio_flux_register_types
-    spatio_flux_register_types(core)
     register_pymunk_types(core)
     register_processes(core)
     return core

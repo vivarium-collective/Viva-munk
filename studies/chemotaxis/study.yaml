@@ -1,0 +1,84 @@
+# chemotaxis/study.yaml — schema v4
+# One study exercising the `chemotaxis` composite from the viva-munk report.
+schema_version: 4
+name: chemotaxis
+title: "Chemotaxis"
+created: '2026-06-02'
+status: complete
+design_status: complete
+implementation_status: complete
+simulation_status: ran
+phase: Evaluate
+
+question: |
+  Do motile cells climb a static 2D ligand gradient via run-and-tumble?
+
+study_card:
+  goal: "Reproduce run/tumble chemotaxis up an exponential attractant gradient."
+  mechanism: "PymunkProcess (motile cells) + Chemotaxis (memory-based tumble modulation) over a static DiffusionAdvection ligand field."
+  expected_result: "Cells bias their motion up-gradient over time, leaving trails skewed toward higher ligand."
+  main_expert_question: "Are run speed, tumble rate, and memory timescale consistent with E. coli chemotaxis?"
+
+biological_summary: |
+  E. coli navigate gradients by modulating the frequency of random reorientations (tumbles) between straight runs: when conditions improve, tumbling is suppressed and runs lengthen. Twelve non-growing motile cells sense a static exponential ligand field through a smoothed memory and bias their net displacement up-gradient. Trails show the accumulated paths.
+
+report:
+  title: "Chemotaxis — multi-cell simulation"
+  verdict: passing-with-caveats
+  confidence: medium
+  evidence_quality: aspirational
+  objective: |
+    Do motile cells climb a static 2D ligand gradient via run-and-tumble?
+  conclusion: |
+    The simulation runs end-to-end and qualitatively reproduces the corresponding panel
+    from the published demo report. Behaviour is not yet quantitatively calibrated to
+    literature targets (see caveat).
+  caveat: |
+    Qualitative reproduction only — parameters use the demo defaults and have not been
+    fit to experimental measurements.
+
+readouts:
+  - "mean x-displacement (up-gradient)"
+  - "tumble rate vs sensed change"
+  - "run-length distribution"
+
+# Runs the `chemotaxis` composite; the simulation GIF is rendered post-hoc from the
+# emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+baseline:
+  - name: baseline
+    composite: viva_munk.composites.chemotaxis
+    params: {}
+
+variants:
+  - name: reference
+    base_composite: baseline
+    parameter_overrides: {}
+    description: "Published demo defaults (baseline parameters)."
+
+# Build tab: baseline composite + (no) perturbations.
+conditions:
+  baseline:
+    composite: viva_munk.composites.chemotaxis
+    params: {}
+  variants: []
+
+# Simulations tab: the completed baseline run.
+simulation_set:
+  - name: baseline
+    kind: single
+    status: ran
+    base_model: baseline
+    duration_steps: 3601
+    seeds: 1
+    metrics:
+      - "mean x-displacement (up-gradient)"
+      - "tumble rate vs sensed change"
+      - "run-length distribution"
+    pass_fail_tests: []
+
+runs:
+  - name: baseline
+    run_id: viva_munk.composites.chemotaxis__1780377792__f41767
+    composite: baseline
+    status: completed
+    n_steps: 3601

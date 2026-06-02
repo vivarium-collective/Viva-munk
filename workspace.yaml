@@ -3,6 +3,14 @@ name: viva-munk
 created: "2026-05-13"
 plugin_version: 0.6.1
 package_path: viva_munk
+# Single-generation run path: viva-munk tracks the whole colony in the
+# `cells` map (its own grow/divide logic adds daughters in-place), so it
+# does not need the v2ecoli multi-generation lineage runner. max_generations
+# > 1 would route the run through `v2ecoli.library.sqlite_run`, which isn't a
+# dependency here. default_n_steps sets the baseline run length per study.
+runtime:
+  max_generations: 1
+  default_n_steps: 150
 observables: []
 visualizations: []
 simulations: []

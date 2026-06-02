@@ -1,0 +1,84 @@
+# inclusion-bodies/study.yaml — schema v4
+# One study exercising the `inclusion_bodies` composite from the viva-munk report.
+schema_version: 4
+name: inclusion-bodies
+title: "Inclusion Bodies"
+created: '2026-06-02'
+status: complete
+design_status: complete
+implementation_status: complete
+simulation_status: ran
+phase: Evaluate
+
+question: |
+  How do inclusion bodies accumulate, burden growth, and segregate across a colony?
+
+study_card:
+  goal: "Show protein-aggregate (inclusion-body) burden and asymmetric segregation at division."
+  mechanism: "IBColony (logistic IB formation toward ~800 nm, growth burden, asymmetric segregation) + Pressure over multi-segment cells."
+  expected_result: "Inclusion bodies grow per cell, burden growth, and segregate asymmetrically—creating aged vs rejuvenated lineages."
+  main_expert_question: "Are the IB formation rate, max size, and burden coefficient consistent with aggregate-aging data?"
+
+biological_summary: |
+  Misfolded-protein inclusion bodies accumulate within cells, impose a metabolic/mechanical burden, and—because they are large—segregate asymmetrically at division. This drives replicative aging: one daughter inherits the aggregate and slows, the other is rejuvenated. The composite tracks per-cell IB size, its growth burden, and segregation across a colony.
+
+report:
+  title: "Inclusion Bodies — multi-cell simulation"
+  verdict: passing-with-caveats
+  confidence: medium
+  evidence_quality: aspirational
+  objective: |
+    How do inclusion bodies accumulate, burden growth, and segregate across a colony?
+  conclusion: |
+    The simulation runs end-to-end and qualitatively reproduces the corresponding panel
+    from the published demo report. Behaviour is not yet quantitatively calibrated to
+    literature targets (see caveat).
+  caveat: |
+    Qualitative reproduction only — parameters use the demo defaults and have not been
+    fit to experimental measurements.
+
+readouts:
+  - "per-cell inclusion-body size"
+  - "growth rate vs IB burden"
+  - "asymmetry at division"
+
+# Runs the `inclusion_bodies` composite; the simulation GIF is rendered post-hoc from the
+# emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+baseline:
+  - name: baseline
+    composite: viva_munk.composites.inclusion_bodies
+    params: {}
+
+variants:
+  - name: reference
+    base_composite: baseline
+    parameter_overrides: {}
+    description: "Published demo defaults (baseline parameters)."
+
+# Build tab: baseline composite + (no) perturbations.
+conditions:
+  baseline:
+    composite: viva_munk.composites.inclusion_bodies
+    params: {}
+  variants: []
+
+# Simulations tab: the completed baseline run.
+simulation_set:
+  - name: baseline
+    kind: single
+    status: ran
+    base_model: baseline
+    duration_steps: 1201
+    seeds: 1
+    metrics:
+      - "per-cell inclusion-body size"
+      - "growth rate vs IB burden"
+      - "asymmetry at division"
+    pass_fail_tests: []
+
+runs:
+  - name: baseline
+    run_id: viva_munk.composites.inclusion_bodies__1780378214__8c8fa5
+    composite: baseline
+    status: completed
+    n_steps: 1201

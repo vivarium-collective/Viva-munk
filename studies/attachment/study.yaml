@@ -1,0 +1,84 @@
+# attachment/study.yaml — schema v4
+# One study exercising the `attachment` composite from the viva-munk report.
+schema_version: 4
+name: attachment
+title: "Attachment"
+created: '2026-06-02'
+status: complete
+design_status: complete
+implementation_status: complete
+simulation_status: ran
+phase: Evaluate
+
+question: |
+  Do cells settle onto a surface, accumulate adhesins, and secrete EPS once attached?
+
+study_card:
+  goal: "Show surface colonization: cells settle, adhere, and begin secreting EPS."
+  mechanism: "PymunkProcess (physics) + AdderGrowDivide (growth) + SecreteEPS gated on an attachment threshold."
+  expected_result: "Cells contact the surface, cross the adhesin threshold, and start emitting EPS particles."
+  main_expert_question: "Are the adhesin threshold and EPS secretion rate in a biologically plausible range?"
+
+biological_summary: |
+  Surface attachment is the first committed step of biofilm formation. Here cells settle onto a substratum, accumulate adhesins, and—once a per-cell adhesin threshold is crossed—switch to an attached state and secrete extracellular polymeric substance (EPS). The model couples rigid-body contact physics to a simple adhesin/secretion rule.
+
+report:
+  title: "Attachment — multi-cell simulation"
+  verdict: passing-with-caveats
+  confidence: medium
+  evidence_quality: aspirational
+  objective: |
+    Do cells settle onto a surface, accumulate adhesins, and secrete EPS once attached?
+  conclusion: |
+    The simulation runs end-to-end and qualitatively reproduces the corresponding panel
+    from the published demo report. Behaviour is not yet quantitatively calibrated to
+    literature targets (see caveat).
+  caveat: |
+    Qualitative reproduction only — parameters use the demo defaults and have not been
+    fit to experimental measurements.
+
+readouts:
+  - "per-cell adhesin level"
+  - "attached-state fraction"
+  - "EPS particle count"
+
+# Runs the `attachment` composite; the simulation GIF is rendered post-hoc from the
+# emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+baseline:
+  - name: baseline
+    composite: viva_munk.composites.attachment
+    params: {}
+
+variants:
+  - name: reference
+    base_composite: baseline
+    parameter_overrides: {}
+    description: "Published demo defaults (baseline parameters)."
+
+# Build tab: baseline composite + (no) perturbations.
+conditions:
+  baseline:
+    composite: viva_munk.composites.attachment
+    params: {}
+  variants: []
+
+# Simulations tab: the completed baseline run.
+simulation_set:
+  - name: baseline
+    kind: single
+    status: ran
+    base_model: baseline
+    duration_steps: 481
+    seeds: 1
+    metrics:
+      - "per-cell adhesin level"
+      - "attached-state fraction"
+      - "EPS particle count"
+    pass_fail_tests: []
+
+runs:
+  - name: baseline
+    run_id: viva_munk.composites.attachment__1780377407__9c74dd
+    composite: baseline
+    status: completed
+    n_steps: 481

@@ -1,0 +1,84 @@
+# glucose-growth/study.yaml — schema v4
+# One study exercising the `glucose_growth` composite from the viva-munk report.
+schema_version: 4
+name: glucose-growth
+title: "Glucose Growth"
+created: '2026-06-02'
+status: complete
+design_status: complete
+implementation_status: complete
+simulation_status: ran
+phase: Evaluate
+
+question: |
+  Does Monod-kinetic growth deplete a diffusing glucose field around the colony?
+
+study_card:
+  goal: "Couple cell growth to a shared, diffusing nutrient field and show local depletion."
+  mechanism: "DiffusionAdvection (glucose) + CellFieldExchange (uptake) + AdderGrowDivide gated by Monod kinetics μ·G/(Km+G)."
+  expected_result: "Cells consume glucose, creating a visible depletion halo; growth slows where glucose is low."
+  main_expert_question: "Are the diffusion constant, Km, and yield set to physiological glucose values?"
+
+biological_summary: |
+  Growth in real environments is limited by nutrient transport. Here a 2D glucose field diffuses while cells sample their local concentration and consume it (per-tick exchange), with division gated by Monod kinetics. The colony carves a depletion halo into the field and growth slows as local glucose runs out.
+
+report:
+  title: "Glucose Growth — multi-cell simulation"
+  verdict: passing-with-caveats
+  confidence: medium
+  evidence_quality: aspirational
+  objective: |
+    Does Monod-kinetic growth deplete a diffusing glucose field around the colony?
+  conclusion: |
+    The simulation runs end-to-end and qualitatively reproduces the corresponding panel
+    from the published demo report. Behaviour is not yet quantitatively calibrated to
+    literature targets (see caveat).
+  caveat: |
+    Qualitative reproduction only — parameters use the demo defaults and have not been
+    fit to experimental measurements.
+
+readouts:
+  - "local glucose at cells"
+  - "field depletion halo"
+  - "growth rate vs glucose"
+
+# Runs the `glucose_growth` composite; the simulation GIF is rendered post-hoc from the
+# emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+baseline:
+  - name: baseline
+    composite: viva_munk.composites.glucose_growth
+    params: {}
+
+variants:
+  - name: reference
+    base_composite: baseline
+    parameter_overrides: {}
+    description: "Published demo defaults (baseline parameters)."
+
+# Build tab: baseline composite + (no) perturbations.
+conditions:
+  baseline:
+    composite: viva_munk.composites.glucose_growth
+    params: {}
+  variants: []
+
+# Simulations tab: the completed baseline run.
+simulation_set:
+  - name: baseline
+    kind: single
+    status: ran
+    base_model: baseline
+    duration_steps: 961
+    seeds: 1
+    metrics:
+      - "local glucose at cells"
+      - "field depletion halo"
+      - "growth rate vs glucose"
+    pass_fail_tests: []
+
+runs:
+  - name: baseline
+    run_id: viva_munk.composites.glucose_growth__1780377888__ffcbd7
+    composite: baseline
+    status: completed
+    n_steps: 961

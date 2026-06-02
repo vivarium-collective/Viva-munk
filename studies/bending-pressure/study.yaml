@@ -1,0 +1,84 @@
+# bending-pressure/study.yaml — schema v4
+# One study exercising the `bending_pressure` composite from the viva-munk report.
+schema_version: 4
+name: bending-pressure
+title: "Bending Pressure"
+created: '2026-06-02'
+status: complete
+design_status: complete
+implementation_status: complete
+simulation_status: ran
+phase: Evaluate
+
+question: |
+  Does mechanical pressure from neighbours inhibit the growth of flexible rod-like cells?
+
+study_card:
+  goal: "Demonstrate pressure-inhibited growth in multi-segment (bendable) cells."
+  mechanism: "Multi-segment bodies (pivot joints + rotary springs) + Pressure proxy + AdderGrowDivide with rate scaled by exp(-pressure/pressure_k)."
+  expected_result: "As the colony packs, contact pressure rises and per-cell growth rate falls; cells visibly bend."
+  main_expert_question: "Is the pressure→growth coupling (pressure_k) calibrated to mechanically-limited growth data?"
+
+biological_summary: |
+  Bacteria in crowded colonies experience mechanical pressure that feeds back on growth. Cells here are flexible multi-segment rods (capsules linked by pivot joints and damped rotary springs) that can flex and buckle. Growth rate is throttled by local contact pressure, producing the characteristic slowing and bending seen in packed microcolonies.
+
+report:
+  title: "Bending Pressure — multi-cell simulation"
+  verdict: passing-with-caveats
+  confidence: medium
+  evidence_quality: aspirational
+  objective: |
+    Does mechanical pressure from neighbours inhibit the growth of flexible rod-like cells?
+  conclusion: |
+    The simulation runs end-to-end and qualitatively reproduces the corresponding panel
+    from the published demo report. Behaviour is not yet quantitatively calibrated to
+    literature targets (see caveat).
+  caveat: |
+    Qualitative reproduction only — parameters use the demo defaults and have not been
+    fit to experimental measurements.
+
+readouts:
+  - "per-cell pressure"
+  - "growth rate vs pressure"
+  - "cell count over time"
+
+# Runs the `bending_pressure` composite; the simulation GIF is rendered post-hoc from the
+# emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+baseline:
+  - name: baseline
+    composite: viva_munk.composites.bending_pressure
+    params: {}
+
+variants:
+  - name: reference
+    base_composite: baseline
+    parameter_overrides: {}
+    description: "Published demo defaults (baseline parameters)."
+
+# Build tab: baseline composite + (no) perturbations.
+conditions:
+  baseline:
+    composite: viva_munk.composites.bending_pressure
+    params: {}
+  variants: []
+
+# Simulations tab: the completed baseline run.
+simulation_set:
+  - name: baseline
+    kind: single
+    status: ran
+    base_model: baseline
+    duration_steps: 961
+    seeds: 1
+    metrics:
+      - "per-cell pressure"
+      - "growth rate vs pressure"
+      - "cell count over time"
+    pass_fail_tests: []
+
+runs:
+  - name: baseline
+    run_id: viva_munk.composites.bending_pressure__1780377746__ac81b9
+    composite: baseline
+    status: completed
+    n_steps: 961

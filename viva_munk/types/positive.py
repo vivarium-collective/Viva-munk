@@ -1,11 +1,13 @@
 """
 Positive numeric types for fields and concentrations.
 
-Adapted from spatio_flux/types/positive.py. The minimal subset needed to
-support diffusing concentration fields and cell ↔ field exchange.
+Originally adapted from spatio_flux/types/positive.py — the minimal subset
+needed to support diffusing concentration fields and cell ↔ field exchange.
+viva_munk now owns these types outright (it no longer depends on spatio_flux),
+and registers them under the bare names ``positive_float``, ``positive_array``,
+``concentration`` and ``set_float`` via ``positive_types``.
 
-Classes are prefixed with ``VM`` to avoid collision with spatio_flux's
-identically-named classes in the bigraph-schema type resolver.
+Classes keep the ``VM`` prefix purely as an internal naming convention.
 """
 from __future__ import annotations
 
@@ -58,22 +60,22 @@ PositiveArray = VMPositiveArray
 
 @render.dispatch
 def render(schema: VMPositiveFloat, defaults: bool = False):
-    return "viva_munk_positive_float"
+    return "positive_float"
 
 
 @render.dispatch
 def render(schema: VMConcentration, defaults: bool = False):
-    return "viva_munk_concentration"
+    return "concentration"
 
 
 @render.dispatch
 def render(schema: VMPositiveArray, defaults: bool = False):
-    return "viva_munk_positive_array"
+    return "positive_array"
 
 
 @render.dispatch
 def render(schema: VMSetFloat, defaults: bool = False):
-    return "viva_munk_set_float"
+    return "set_float"
 
 
 # ---------------------------------------------------------------------
@@ -132,8 +134,8 @@ def apply(schema: VMPositiveArray, current, update, path):
 # ---------------------------------------------------------------------
 
 positive_types = {
-    "viva_munk_positive_float": VMPositiveFloat(),
-    "viva_munk_positive_array": VMPositiveArray(),
-    "viva_munk_concentration": VMConcentration(),
-    "viva_munk_set_float": VMSetFloat(),
+    "positive_float": VMPositiveFloat(),
+    "positive_array": VMPositiveArray(),
+    "concentration": VMConcentration(),
+    "set_float": VMSetFloat(),
 }

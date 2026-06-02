@@ -1,0 +1,84 @@
+# mother-machine/study.yaml — schema v4
+# One study exercising the `mother_machine` composite from the viva-munk report.
+schema_version: 4
+name: mother-machine
+title: "Mother Machine"
+created: '2026-06-02'
+status: complete
+design_status: complete
+implementation_status: complete
+simulation_status: ran
+phase: Evaluate
+
+question: |
+  How do cells grow when trapped one-per-channel in a mother-machine device?
+
+study_card:
+  goal: "Reproduce single-channel trapping: one cell per dead-end channel, progeny pushed into the flow channel."
+  mechanism: "PymunkProcess (narrow dead-end channels with barriers) + AdderGrowDivide + RemoveCrossing into the flow channel."
+  expected_result: "Each channel keeps a 'mother' at the closed end while daughters are pushed out and removed."
+  main_expert_question: "Do the channel dimensions and flow-channel removal reproduce mother-machine kinetics?"
+
+biological_summary: |
+  The mother machine is a classic microfluidic device for long-term single-cell tracking: a cell is confined at the closed end of a narrow channel, and successive daughters are pushed toward an open flow channel and washed away. The model lays out 32 such channels with barriers and removes cells that cross into the flow channel.
+
+report:
+  title: "Mother Machine — multi-cell simulation"
+  verdict: passing-with-caveats
+  confidence: medium
+  evidence_quality: aspirational
+  objective: |
+    How do cells grow when trapped one-per-channel in a mother-machine device?
+  conclusion: |
+    The simulation runs end-to-end and qualitatively reproduces the corresponding panel
+    from the published demo report. Behaviour is not yet quantitatively calibrated to
+    literature targets (see caveat).
+  caveat: |
+    Qualitative reproduction only — parameters use the demo defaults and have not been
+    fit to experimental measurements.
+
+readouts:
+  - "cells per channel"
+  - "mother retention"
+  - "daughters removed"
+
+# Runs the `mother_machine` composite; the simulation GIF is rendered post-hoc from the
+# emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+baseline:
+  - name: baseline
+    composite: viva_munk.composites.mother_machine
+    params: {}
+
+variants:
+  - name: reference
+    base_composite: baseline
+    parameter_overrides: {}
+    description: "Published demo defaults (baseline parameters)."
+
+# Build tab: baseline composite + (no) perturbations.
+conditions:
+  baseline:
+    composite: viva_munk.composites.mother_machine
+    params: {}
+  variants: []
+
+# Simulations tab: the completed baseline run.
+simulation_set:
+  - name: baseline
+    kind: single
+    status: ran
+    base_model: baseline
+    duration_steps: 481
+    seeds: 1
+    metrics:
+      - "cells per channel"
+      - "mother retention"
+      - "daughters removed"
+    pass_fail_tests: []
+
+runs:
+  - name: baseline
+    run_id: viva_munk.composites.mother_machine__1780378258__06d327
+    composite: baseline
+    status: completed
+    n_steps: 481

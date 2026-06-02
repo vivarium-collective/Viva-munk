@@ -1,0 +1,97 @@
+# composite-gallery/investigation.yaml — schema v2
+schema_version: 2
+name: composite-gallery
+title: "Viva-munk Composite Gallery"
+created: '2026-06-02'
+status: running
+
+question: |
+  Can every viva-munk composite from the published report be reproduced as an individual,
+  runnable study in the dashboard, with its simulation GIF shown on the report?
+
+hypothesis: |
+  Each composite, run with the demo defaults, qualitatively reproduces its published panel —
+  surface attachment, pressure-limited bending growth, biofilm packing, chemotactic gradient
+  climbing, mother/daughter device kinetics, nutrient-coupled growth, inclusion-body aging,
+  and density-dependent quorum sensing.
+
+lead: |
+  viva-munk models populations of growing, dividing cells with 2D physics (pymunk) and shared
+  chemical fields, built on process-bigraph. This investigation gathers one study per composite
+  so each mechanism can be run, visualized, and inspected on its own. Every study has a real
+  completed simulation; its animation is rendered post-hoc from the emitter results, exactly as
+  in the published demo report.
+
+executive:
+  what_is_this: |
+    A gallery of the nine viva-munk multi-cell composites, each run as its own study with a
+    simulation animation and a short biological write-up.
+  verdict: "All nine run and qualitatively reproduce the published demo; not yet quantitatively calibrated."
+  verdict_status: passing-with-caveats
+  decisions_needed:
+    - "Which composites need parameter calibration against literature before quantitative claims?"
+    - "Which readouts should become pass/fail behavior tests?"
+
+scientific_argument:
+  main_claim: |
+    The viva-munk process-bigraph composites reproduce a broad range of multi-cell phenomena
+    (mechanics, motility, nutrient coupling, aging, signaling) in a single composable framework.
+  evidence_for:
+    - "All nine simulations complete and produce the expected qualitative dynamics (see each study's GIF)."
+    - "Mechanisms span physics (bending/pressure), motility (chemotaxis), fields (glucose, autoinducer), and aging (inclusion bodies)."
+  evidence_against:
+    - "Parameters use demo defaults; no quantitative fit to experimental data yet."
+    - "Readouts are declared but not yet enforced as pass/fail behavior tests."
+  caveats:
+    - "GIFs are qualitative; calibration and behavior tests are future work."
+
+biological_story: |
+  Bacteria live as physically interacting populations in structured, chemically heterogeneous
+  environments. viva-munk assembles that picture from composable parts: capsule-shaped cells with
+  realistic 2D mechanics that grow, divide, push on each other, and bend; diffusing concentration
+  fields they consume or secrete into; and behavioural rules layered on top — chemotactic
+  run/tumble, quorum-sensing feedback, inclusion-body aging, and surface attachment. Each study in
+  this gallery isolates one of these mechanisms so it can be seen clearly, while sharing the same
+  underlying cell, physics, and field machinery.
+
+at_a_glance:
+  - {study: attachment, role: "Show surface colonization: cells settle, adhere, and begin secreting EPS."}
+  - {study: bending-pressure, role: "Demonstrate pressure-inhibited growth in multi-segment (bendable) cells."}
+  - {study: biofilm, role: "Show emergent colony / biofilm architecture from many interacting cells."}
+  - {study: chemotaxis, role: "Reproduce run/tumble chemotaxis up an exponential attractant gradient."}
+  - {study: daughter-machine, role: "Track lineages in an open chamber where cells crossing the right wall are removed."}
+  - {study: glucose-growth, role: "Couple cell growth to a shared, diffusing nutrient field and show local depletion."}
+  - {study: inclusion-bodies, role: "Show protein-aggregate (inclusion-body) burden and asymmetric segregation at division."}
+  - {study: mother-machine, role: "Reproduce single-channel trapping: one cell per dead-end channel, progeny pushed into the flow channel."}
+  - {study: quorum-sensing, role: "Show density-dependent autoinducer signaling: cells switch ON above a local threshold."}
+
+how_to_read: |
+  Start with the simulation GIF in each study (or the gallery report at
+  /reports/composite-gallery.html) to see the behaviour, then read the study card and biological
+  summary. attachment / biofilm show colony formation; bending-pressure / inclusion-bodies show
+  mechanics and aging; chemotaxis shows motility; glucose-growth / quorum-sensing show field
+  coupling; mother- and daughter-machine show device geometries.
+
+glossary:
+  - {term: "composite", definition: "A wired set of processes (physics, growth, fields, signaling) run together as one model."}
+  - {term: "process-bigraph", definition: "The compositional simulation framework viva-munk is built on."}
+  - {term: "pymunk", definition: "The 2D rigid-body physics engine used for cell mechanics and contacts."}
+  - {term: "EPS", definition: "Extracellular polymeric substance — the secreted matrix of a biofilm."}
+  - {term: "Monod kinetics", definition: "Saturating growth-rate law μ·S/(Km+S) used for nutrient-limited growth."}
+  - {term: "autoinducer", definition: "A diffusible signal whose concentration encodes population density (quorum sensing)."}
+  - {term: "inclusion body", definition: "An intracellular protein aggregate that burdens growth and segregates asymmetrically."}
+
+studies:
+  - attachment
+  - bending-pressure
+  - biofilm
+  - chemotaxis
+  - daughter-machine
+  - glucose-growth
+  - inclusion-bodies
+  - mother-machine
+  - quorum-sensing
+
+expert_docs: []
+
+acceptance_criteria: []
