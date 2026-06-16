@@ -537,14 +537,23 @@ class PymunkProcess(Process):
         body.position = pymunk.Vec2d(*attrs.get('location', (body.position.x, body.position.y)))
         body.velocity = pymunk.Vec2d(vx, vy)
 
+        # Only a true TYPE change (circle<->segment) needs a brand-new shape.
+        # Geometry-only changes (a growing cell's length/radius shift every
+        # tick) are applied IN PLACE via pymunk's unsafe_set_* API. Allocating
+        # a new shape each tick made the body accumulate old shapes that were
+        # never freed — a per-cell-per-tick RSS leak (~1 pymunk Segment/cell/
+        # tick) that OOM-killed growing colonies.
         needs_rebuild = False
+        geom_changed = False
         if shape_type == 'circle':
             radius = float(attrs['radius'])
-            if not isinstance(old_shape, pymunk.Circle) or abs(
-                    old_shape.radius - radius) > 1e-9 or old_type != 'circle':
+            if not isinstance(old_shape, pymunk.Circle) or old_type != 'circle':
                 needs_rebuild = True
-            if needs_rebuild:
                 new_shape = pymunk.Circle(body, radius)
+            elif abs(old_shape.radius - radius) > 1e-9:
+                old_shape.unsafe_set_radius(radius)
+                geom_changed = True
+            if needs_rebuild or geom_changed:
                 body.moment = pymunk.moment_for_circle(mass, 0, radius)
         elif shape_type == 'segment':
             length = float(attrs['length'])
@@ -553,15 +562,16 @@ class PymunkProcess(Process):
             # Local endpoints along the x-axis — body.angle handles world rotation
             start = pymunk.Vec2d(-length / 2, 0)
             end = pymunk.Vec2d(length / 2, 0)
-            # Rebuild whenever length, radius, or type changes
             old_length = agent.get('length') or 0.0
-            if (not isinstance(old_shape, pymunk.Segment)
-                    or abs(old_shape.radius - radius) > 1e-9
-                    or abs(old_length - length) > 1e-9
-                    or old_type != 'segment'):
+            if not isinstance(old_shape, pymunk.Segment) or old_type != 'segment':
                 needs_rebuild = True
-            if needs_rebuild:
                 new_shape = pymunk.Segment(body, start, end, radius)
+            elif (abs(old_shape.radius - radius) > 1e-9
+                    or abs(old_length - length) > 1e-9):
+                old_shape.unsafe_set_endpoints(start, end)
+                old_shape.unsafe_set_radius(radius)
+                geom_changed = True
+            if needs_rebuild or geom_changed:
                 body.moment = pymunk.moment_for_segment(mass, start, end, radius)
             body.angle = angle
             body.length = length
@@ -569,7 +579,6 @@ class PymunkProcess(Process):
         else:
             raise ValueError(f"Unknown shape type: {shape_type}")
 
-        # swap shape if needed
         if needs_rebuild:
             # preserve material params
             elasticity = attrs.get('elasticity', self.config['elasticity'])
@@ -580,6 +589,9 @@ class PymunkProcess(Process):
             self.space.remove(old_shape)
             self.space.add(new_shape)
             agent['shape'] = new_shape
+        elif geom_changed and hasattr(self.space, 'reindex_shape'):
+            # Keep the broadphase consistent after an in-place geometry change.
+            self.space.reindex_shape(old_shape)
 
         # keep dict in sync
         agent['type'] = shape_type
