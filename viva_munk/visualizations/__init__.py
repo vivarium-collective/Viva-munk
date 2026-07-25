@@ -26,7 +26,7 @@ matplotlib.use("Agg")  # headless render — no display required
 import numpy as np
 from PIL import Image
 
-from pbg_superpowers.visualization import Visualization
+from viva_superpowers.visualization import Visualization
 
 from viva_munk.plots.multibody_plots import GifRenderer
 
