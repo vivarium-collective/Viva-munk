@@ -265,3 +265,19 @@ def make_ib_colony_process(
         'inputs': {'agents': [agents_key]},
         'outputs': {'agents': [agents_key]},
     }
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+InclusionBody.contract = {'summary': 'Per-cell inclusion-body accumulator — misfolded-protein aggregate forms then grows '
+            'exponentially inside each cell.',
+ 'inputs': {'agent_id': "This cell's id.",
+            'agents': 'Cells; carries inclusion_body aggregate mass (pg).'},
+ 'outputs': {'agents': 'Cells with inclusion_body mass (pg) after formation_rate (1/s) + '
+                       'exponential growth_rate (1/s).'},
+ 'assumptions': ['The IB is segregated asymmetrically at division (kept on one daughter).']}
+IBColony.contract = {'summary': 'Colony growth + division + inclusion-body burden — combines cell growth with an IB '
+            'load that slows growth as it accumulates.',
+ 'inputs': {'agents': 'Cells; length (µm) and inclusion_body mass (pg).'},
+ 'outputs': {'agents': 'Cells grown (rate 1/s → floor) with IB burden (ib_burden_coef) up to '
+                       'ib_max (nm); division splits at length threshold (µm).'},
+ 'assumptions': ['Growth rate falls with IB load; pressure-modulated by `pressure_k`.']}

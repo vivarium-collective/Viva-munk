@@ -97,3 +97,12 @@ def make_remove_crossing_process(
             'agents': [agents_key],
         },
     }
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+RemoveCrossing.contract = {'summary': 'Mother-machine-style culling — removes cells that cross a boundary (e.g. washed out '
+            'past the open end of a trench).',
+ 'inputs': {'agents': 'Cells; location (µm).'},
+ 'outputs': {'agents': 'Cells minus any whose position crosses the [x_min, x_max] × [y_min, y_max] '
+                       'bounds (µm) or `crossing_y` (µm) line.'},
+ 'assumptions': ['A cell past the bound is removed outright (no partial retention).']}

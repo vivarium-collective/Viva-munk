@@ -123,3 +123,14 @@ def make_pressure_process(agents_key='cells', contact_slack=0.5,
             'agents': [agents_key],
         },
     }
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+Pressure.contract = {'summary': 'Contact-pressure from neighbor + wall overlap — computes a per-cell mechanical '
+            'pressure used to modulate growth in dense colonies.',
+ 'inputs': {'agents': 'Cells; per cell: location (µm), length (µm), radius (µm), mass (pg), angle '
+                      '(rad), velocity (µm/s) (overlap from radius/length µm).'},
+ 'outputs': {'agents': 'Cells annotated with local pressure (scaled by `pressure_scale`), from '
+                       'neighbor contacts + walls at env_size (µm).'},
+ 'assumptions': ['Pressure ∝ pairwise overlap depth (µm) minus `contact_slack`; walls weighted by '
+                 '`wall_weight`.']}

@@ -199,3 +199,15 @@ def make_cell_field_exchange_process(
             'fields': [fields_key],
         },
     }
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+CellFieldExchange.contract = {'summary': 'Per-cell sampling & deposition between agents and 2D concentration fields — cells '
+            'read the local field value at their position and deposit/consume back into the grid.',
+ 'inputs': {'agents': 'Cells (location µm) that sample/deposit; per cell: location (µm), length '
+                      '(µm), radius (µm), mass (pg), angle (rad), velocity (µm/s)',
+            'fields': '2D concentration grids (µM) on an n_bins grid over `bounds` (µm).'},
+ 'outputs': {'agents': 'Cells with their sampled local concentrations (µM) attached.',
+             'fields': 'Field grids (µM) after per-cell deposition/uptake (spread over `depth` '
+                       'µm).'},
+ 'assumptions': ["Bilinear sample/deposit at each cell's (x, y) µm position on the field grid."]}

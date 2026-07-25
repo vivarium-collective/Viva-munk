@@ -531,3 +531,23 @@ class AdderGrowDivide(Process):
         update['_remove'].append(agent_id)
 
         return {'agents': update}
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+GrowDivide.contract = {'summary': 'Exponential single-cell growth with size-threshold division — cells elongate then '
+            'split in two at a length threshold.',
+ 'inputs': {'agent_id': "This cell's id.",
+            'agents': 'Cells; per cell: location (µm), length (µm), radius (µm), mass (pg), angle '
+                      '(rad), velocity (µm/s).'},
+ 'outputs': {'agents': 'Cells grown by rate (1/s) toward threshold (µm); at threshold, replaced by '
+                       'two daughters (division writes {_add, _remove}).'},
+ 'assumptions': ['Growth is pressure-modulated by `pressure_k`; optional per-division mutation of '
+                 'rate/threshold.']}
+AdderGrowDivide.contract = {'summary': 'Adder-model growth & division (Taheri-Araghi et al. 2015) — each cell adds a '
+            '~constant increment of size per cycle regardless of birth size.',
+ 'inputs': {'agent_id': "This cell's id.",
+            'agents': 'Cells; per cell: location (µm), length (µm), radius (µm), mass (pg), angle '
+                      '(rad), velocity (µm/s).'},
+ 'outputs': {'agents': 'Cells growing at alpha_mean_per_h (1/h); divide after adding delta_mean '
+                       '(µm), with CV noise. Nutrient-limited via Monod (nutrient µM, Km µM).'},
+ 'assumptions': ["Added size per cycle (delta) is birth-size-independent (the 'adder' principle)."]}
