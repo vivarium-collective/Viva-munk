@@ -10,7 +10,7 @@ Parameters intentionally left unexposed for now — call sites get the
 builder's default config. Per-composite kwargs can be surfaced later by
 filling in `parameters=` on the decorator.
 """
-from pbg_superpowers.composite_generator import composite_generator
+from viva_superpowers.composite_generator import composite_generator
 
 from viva_munk.experiments.documents.attachment import attachment_document
 from viva_munk.experiments.documents.bending_pressure import bending_pressure_document
