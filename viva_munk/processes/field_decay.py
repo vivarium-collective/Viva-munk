@@ -59,3 +59,10 @@ def make_field_decay_process(decay_rates, fields_key='fields', interval=30.0):
         'inputs': {'fields': [fields_key]},
         'outputs': {'fields': [fields_key]},
     }
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+FieldDecay.contract = {'summary': 'First-order exponential decay of 2D field concentrations.',
+ 'inputs': {'fields': '2D concentration grids (µM).'},
+ 'outputs': {'fields': 'Fields after decay (µM), per-field first-order rate `decay_rates` (1/s).'},
+ 'assumptions': ['Each field decays independently at its configured rate (1/s).']}

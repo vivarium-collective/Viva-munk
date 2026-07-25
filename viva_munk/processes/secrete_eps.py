@@ -167,3 +167,13 @@ def add_secrete_eps_to_agents(initial_state, agents_key='cells', particles_key='
             interval=interval,
         )
     return initial_state
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+SecreteEPS.contract = {'summary': 'EPS secretion — attached cells extrude extracellular-polymeric-substance particles '
+            'into the physics space (biofilm matrix).',
+ 'inputs': {'agent_id': "This cell's id.",
+            'agents': 'Cells; secrete when attached (adhesins present).'},
+ 'outputs': {'particles': 'New EPS particles: radius eps_radius (µm), mass eps_mass (pg), at '
+                          'secretion_rate (1/s).'},
+ 'assumptions': ['`requires_attached` gates secretion to surface-attached cells only.']}

@@ -202,3 +202,17 @@ def add_chemotaxis_to_agents(
             config=config,
         )
     return initial_state
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+Chemotaxis.contract = {'summary': 'Run-and-tumble chemotaxis up a ligand gradient — cells bias tumble frequency on the '
+            'time-derivative of sensed ligand.',
+ 'inputs': {'agent_id': "This cell's id.",
+            'agents': 'Cells; per cell: location (µm), length (µm), radius (µm), mass (pg), angle '
+                      '(rad), velocity (µm/s); senses the `ligand_key` field (µM) at its '
+                      'position.'},
+ 'outputs': {'agents': 'Cells with updated heading/velocity: run_speed (µm/s), tumble rate (1/s) '
+                       'between tumble_rate_min…max, tumble reorientation ~N(0, tumble_angle_sigma '
+                       'rad).'},
+ 'assumptions': ['Memory tau_memory (s) sets the adaptation timescale; sensitivity scales the '
+                 'response to d[ligand]/dt.']}

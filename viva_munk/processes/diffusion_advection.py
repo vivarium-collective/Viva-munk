@@ -410,3 +410,13 @@ class DiffusionAdvection(Process):
         return C
 
 
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+DiffusionAdvection.contract = {'summary': 'Explicit finite-difference diffusion + advection of 2D scalar fields, with a one-cell '
+            'ghost layer for boundary conditions.',
+ 'inputs': {'fields': '2D concentration grids (µM) on an n_bins grid over `bounds` (µm).'},
+ 'outputs': {'fields': 'Advanced fields (µM) after one CFL-limited step (diffusion µm²/s, '
+                       'advection µm/s).'},
+ 'assumptions': ['Sub-steps to satisfy the CFL condition (max_dt s, cfl_adv); negatives optionally '
+                 'clipped.']}

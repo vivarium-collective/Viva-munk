@@ -135,3 +135,15 @@ def add_quorum_sensing_to_agents(
             config=config,
         )
     return initial_state
+
+
+# --- workbench loom contracts (per-port meanings + units) ---
+QuorumSensing.contract = {'summary': 'Quorum sensing — cells secrete an autoinducer into a shared pool and respond to its '
+            'concentration via a Hill function.',
+ 'inputs': {'agent_id': "This cell's id.",
+            'agents': 'Cells; sense the autoinducer field `ai_key` (µM).'},
+ 'outputs': {'agents': 'Cells with Hill response (K = hill_k µM, n = hill_n); secretion between '
+                       'basal…max (µM/s), pool degrades at degradation_rate (1/s) over bin_volume '
+                       '(µm³).'},
+ 'assumptions': ['Local AI concentration = molecules / bin_volume; response is Hill(AI; hill_k, '
+                 'hill_n).']}
