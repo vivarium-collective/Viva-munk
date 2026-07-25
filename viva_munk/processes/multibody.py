@@ -66,6 +66,35 @@ def local_impulse_point_for_shape(shape):
 
 
 class PymunkProcess(Process):
+    """2D rigid-body physics for colonies — a pymunk space that integrates
+    rod-shaped cells, soft multi-segment cells, and circular particles under
+    collisions, damping, jitter, optional gravity/adhesion, and chamber walls.
+    """
+
+    # Structured contract — surfaced by the workbench loom (card contract band +
+    # Inspector) and by ``bigraph_schema.contract.resolve_contract``.
+    contract = {
+        "summary": (
+            "2D rigid-body physics for the colony — steps a pymunk space so cells "
+            "grow, push apart, and reorient under collisions, damping, and jitter."
+        ),
+        "inputs": {
+            "segment_cells": "Rod-shaped rigid cells (position, angle, length, radius, mass, velocity) keyed by agent id.",
+            "bending_cells": "Soft, multi-segment capsule cells joined by rotary springs (flexible rods).",
+            "circle_particles": "Circular rigid particles (e.g. EPS / beads) sharing the space.",
+        },
+        "outputs": {
+            "segment_cells": "Rod cells after one physics step — positions/angles advanced by forces + collisions.",
+            "bending_cells": "Bending cells after one physics step (segment poses updated).",
+            "circle_particles": "Particles after one physics step.",
+        },
+        "assumptions": [
+            "Cells are capsule/segment rigid bodies; growth changes body size, division is handled by the cell process.",
+            "Integration uses `substeps` sub-steps per update; motion is overdamped (gravity off by default).",
+            "The environment is a rectangular chamber bounded by walls of `wall_thickness`.",
+        ],
+    }
+
     config_schema = {
         'env_size': {'_type': 'float', '_default': 500},
         # Optional rectangular chamber. If env_height is 0 or unset, the
