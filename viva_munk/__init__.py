@@ -105,15 +105,18 @@ def register_pymunk_types(core):
     # Use the optimized PymunkAgent Node subclass instead of a dict schema.
     # This eliminates per-field dispatch overhead in apply/reconcile/realize.
     core.register_type('pymunk_agent', PymunkAgent())
-    # viva_munk owns its positive numeric types ('positive_float',
-    # 'positive_array', 'concentration', 'set_float') — used by the
-    # concentration-field processes (e.g. CellFieldExchange,
-    # DiffusionAdvection). Previously these were deferred to
-    # spatio_flux_register_types to avoid a duplicate-registration
-    # conflict; with spatio_flux removed there is no conflict, so we
-    # register them here.
+    # viva_munk's positive numeric types ('positive_float', 'positive_array',
+    # 'concentration', 'set_float') are a fork of spatio_flux's positive.py.
+    # When both packages share one core (e.g. a tumor-tcell + spatio-flux
+    # workspace), spatio_flux may have registered these keys first; re-registering
+    # deep-merges through resolve() and raises when the existing entry is an
+    # incompatible (e.g. Python-class-valued) type — which silently aborts the
+    # rest of core_import (custom types and process links then never register).
+    # Register idempotently: defer to whatever a sibling package already put
+    # there, and only register the keys that are missing.
     for type_name, type_instance in positive_types.items():
-        core.register_type(type_name, type_instance)
+        if type_name not in core.registry:
+            core.register_type(type_name, type_instance)
 
 
 def register_processes(core):
