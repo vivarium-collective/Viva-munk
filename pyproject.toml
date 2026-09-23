@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "viva-munk"
-version = "0.0.3"
+version = "0.0.4"
 description = "multi-cell simulations with pymunk 2d physics"
 readme = "README.md"
 license = { text = "MIT" }
@@ -31,6 +31,13 @@ dependencies = [
     "plum-dispatch",
     # viva_munk/visualizations/* subclass pbg_superpowers.visualization.Visualization.
     "pbg-superpowers",
+    # viva_munk/__init__.py imports SQLiteEmitter from process_bigraph.emitter at
+    # module load; SQLiteEmitter was extracted to the focused `viva-emitters`
+    # package and is only lazily re-exported there, so a standalone
+    # `pip install viva-munk` fails with `No module named 'viva_emitters'` unless
+    # viva-emitters is declared (it was previously satisfied transitively only
+    # when the workbench happened to be installed alongside).
+    "viva-emitters",
 ]
 
 [project.optional-dependencies]
