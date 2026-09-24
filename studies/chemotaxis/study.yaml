@@ -67,7 +67,7 @@ simulation_set:
   - name: baseline
     kind: single
     status: ran
-    base_model: baseline
+    base_model: viva_munk.composites.chemotaxis
     duration_steps: 3601
     seeds: 1
     metrics:

@@ -67,7 +67,7 @@ simulation_set:
   - name: baseline
     kind: single
     status: ran
-    base_model: baseline
+    base_model: viva_munk.composites.mother_machine
     duration_steps: 481
     seeds: 1
     metrics:
