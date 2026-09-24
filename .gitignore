@@ -1,13 +1,17 @@
 .python-version
-__pycache__/
-out/
 uv.lock
 .DS_Store
 .idea/
 *.egg-info/
-venv/
 *.pyc
+__pycache__/
+venv/
+.venv/
 .pbg/
-reports/
-scripts/
-studies/*/runs.db
+# Anchor workspace-level artifact dirs to the repo root so the same names
+# nested inside the published dashboard bundle (doc/dashboard/reports/, ...)
+# are NOT ignored.
+/out/
+/reports/
+/scripts/
+/studies/*/runs.db
