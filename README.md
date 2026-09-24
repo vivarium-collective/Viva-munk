@@ -6,7 +6,7 @@
 
 Multi-cell simulations with 2D physics, built on [process-bigraph](https://github.com/vivarium-collective/process-bigraph) and [pymunk](https://www.pymunk.org/).
 
-### **[Demos](https://vivarium-collective.github.io/Viva-munk/)**
+### **[Demos](https://vivarium-collective.github.io/Viva-munk/)** · **[Composite Gallery investigation](https://vivarium-collective.github.io/Viva-munk/dashboard/reports/investigation-composite-gallery.html)**
 
 ## Goal
 
@@ -98,8 +98,37 @@ The current registry (`viva_munk/experiments/test_suite.py`):
 - **bending_pressure** — multi-segment bending capsules grow into a colony. `Pressure` computes mechanical pressure from neighbor / wall contacts and `GrowDivide` applies `exp(-pressure / pressure_k)` inhibition. Cells visibly bend AND slow.
 - **chemotaxis** — twelve non-growing cells run/tumble up a static exponential ligand gradient in a long chamber. Each cell maintains a memory of its local concentration and modulates tumble rate as `λ = λ₀ · exp(-k · dc/dt)`.
 - **inclusion_bodies** — a colony grows while each cell accumulates an inclusion-body aggregate (size in nm, logistic growth toward an 800 nm plateau). Aggregation inhibits growth; at division the IB is transferred entirely to one daughter so the IB-free sibling out-grows the laden one. Cells are soft bending capsules and a `Pressure` step adds a second slowdown as the colony packs. Colored by IB size.
+- **quorum_sensing** — cells secrete a diffusible autoinducer into a shared 2D field; each cell reads its local concentration and switches to an "ON" state once density-dependent signal crosses a threshold, reproducing the population-density switch of quorum sensing.
 
 `test_suite.py` runs each one, captures a GIF, a bigraph composition viz, and a serialized state JSON, and generates an HTML report (`out/report.html`) with timing, cell counts, descriptions, and embedded media.
+
+## Investigation: Composite Gallery
+
+Every composite above is also packaged as a **viva-superpowers workspace investigation** —
+[`composite-gallery`](investigations/composite-gallery/investigation.yaml) — that gathers one
+runnable **study** per composite so each mechanism can be run, visualized, and inspected on its
+own. All nine studies re-run end-to-end on the current process-bigraph / vivarium-workbench stack.
+
+- **Interactive report:** [Composite Gallery investigation](https://vivarium-collective.github.io/Viva-munk/dashboard/reports/investigation-composite-gallery.html) · [full dashboard](https://vivarium-collective.github.io/Viva-munk/dashboard/)
+- **In the repo:** [`investigations/composite-gallery/`](investigations/composite-gallery/) and the per-composite studies under [`studies/`](studies/)
+
+| Study | What it shows |
+|-------|---------------|
+| [attachment](studies/attachment/) | Surface colonization: cells settle, adhere, and begin secreting EPS. |
+| [bending-pressure](studies/bending-pressure/) | Pressure-inhibited growth in multi-segment (bendable) cells. |
+| [biofilm](studies/biofilm/) | Emergent colony / biofilm architecture from many interacting cells. |
+| [chemotaxis](studies/chemotaxis/) | Run/tumble chemotaxis up an exponential attractant gradient. |
+| [daughter-machine](studies/daughter-machine/) | Lineages in an open chamber where cells crossing the right wall are removed. |
+| [glucose-growth](studies/glucose-growth/) | Growth coupled to a shared, diffusing nutrient field with local depletion. |
+| [inclusion-bodies](studies/inclusion-bodies/) | Protein-aggregate burden and asymmetric segregation at division. |
+| [mother-machine](studies/mother-machine/) | Single-channel trapping: one cell per dead-end channel, progeny pushed into the flow channel. |
+| [quorum-sensing](studies/quorum-sensing/) | Density-dependent autoinducer signaling: cells switch ON above a local threshold. |
+
+Studies are managed with the [viva-superpowers](https://github.com/vivarium-collective/viva-superpowers)
+`/viva-*` skills (`/viva-workbench`, `/viva-investigation`, `/viva-study`, `/viva-report`). The
+verdict is honest about scope: all nine reproduce their published panel **qualitatively**;
+quantitative calibration and pass/fail behavior tests are tracked as follow-ups in the
+investigation.
 
 ## Dependencies
 

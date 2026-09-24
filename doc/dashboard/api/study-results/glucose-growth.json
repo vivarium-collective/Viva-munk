@@ -1,0 +1,1 @@
+{"present": false, "run_id": "viva_munk.composites.glucose_growth__1790216175__1cc43e", "reason": "could not read this run's store: float() argument must be a string or a real number, not 'NoneType'"}
