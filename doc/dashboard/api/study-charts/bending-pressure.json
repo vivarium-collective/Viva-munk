@@ -1,1 +1,1 @@
-{"study": "bending-pressure", "schema_version": 4, "charts": [], "db_exists": true, "data_store": "sqlite", "static_count": 0, "live_count": 0}
+{"study": "bending-pressure", "schema_version": 4, "charts": [{"title": "multibody", "caption": "", "simulations": "", "interpretation": "", "run_id": null, "key": "multibody", "iframe_url": "/multibody.html", "media": "html", "source": "declared", "freshness": "declared"}], "db_exists": true, "data_store": "sqlite", "static_count": 1, "live_count": 0}

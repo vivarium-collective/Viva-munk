@@ -44,6 +44,10 @@ readouts:
 
 # Runs the `inclusion_bodies` composite; the simulation GIF is rendered post-hoc from the
 # emitter results (scripts/run_studies_for_dashboard.py) and shown under Visualizations.
+visualizations:
+  - name: multibody
+    path: viz/multibody.html
+
 baseline:
   - name: baseline
     composite: viva_munk.composites.inclusion_bodies
