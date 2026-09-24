@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "viva-munk"
-version = "0.0.5"
+version = "0.0.6"
 description = "multi-cell simulations with pymunk 2d physics"
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,7 +21,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "process-bigraph",
+    "process-bigraph>=1.8.2",  # composite_generator core_extensions (used by our generators) landed in 1.8.0
     "bigraph-schema>=0.0.60",
     "bigraph-viz",
     "pymunk",
