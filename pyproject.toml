@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
 
 [project]
 name = "viva-munk"
-version = "0.0.4"
+version = "0.0.5"
 description = "multi-cell simulations with pymunk 2d physics"
 readme = "README.md"
 license = { text = "MIT" }
@@ -52,16 +52,26 @@ dev = [
 Homepage = "https://github.com/vivarium-collective/Viva-munk"
 Repository = "https://github.com/vivarium-collective/Viva-munk"
 
-# Auto-discover every viva_munk subpackage at build time. The hand-
-# maintained list previously skipped `viva_munk.composites` AND
-# `viva_munk.visualizations`, so the published wheel didn't include
-# those directories at all and `import viva_munk` broke on any clean
-# install (the package's own __init__.py imports them). The
-# auto-discovery pattern matches what spatio-flux does.
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["viva_munk*"]
-exclude = ["tests*", "docs*", "studies*"]
+# Build with hatchling so the wheel can force-include this module's workspace
+# content. `packages = ["viva_munk"]` ships the ENTIRE viva_munk/ tree — every
+# subpackage, including composites/ and visualizations/ (the package's __init__
+# imports them; the old setuptools hand-list once dropped them). No exclude list
+# to maintain.
+[tool.hatch.build.targets.wheel]
+packages = ["viva_munk"]
+
+# Ship the module's workspace content INSIDE the installed package, so a
+# wheel/PyPI install exposes its studies + composite-gallery investigation
+# read-only in the vivarium-workbench (via lib/federation.linked_workspaces'
+# installed-module discovery). Without this a wheel surfaces only the composites
+# and the studies list-but-fail-to-open ("Study not found"). workspace.yaml lands
+# at viva_munk/workspace.yaml (the federation root); studies/ and investigations/
+# are its default-layout subdirs. Only tracked content ships (~38 MB, the
+# interactive multibody viz) — the gitignored run stores (runs.db, sims/) do not.
+[tool.hatch.build.targets.wheel.force-include]
+"workspace.yaml" = "viva_munk/workspace.yaml"
+"studies" = "viva_munk/studies"
+"investigations" = "viva_munk/investigations"
 
 # NOTE: this package previously declared a [tool.uv.sources] override
 # pointing process-bigraph at `../process-bigraph` (editable). That
