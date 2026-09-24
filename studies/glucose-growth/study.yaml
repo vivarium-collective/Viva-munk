@@ -67,7 +67,7 @@ simulation_set:
   - name: baseline
     kind: single
     status: ran
-    base_model: baseline
+    base_model: viva_munk.composites.glucose_growth
     duration_steps: 961
     seeds: 1
     metrics:

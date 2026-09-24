@@ -67,7 +67,7 @@ simulation_set:
   - name: baseline
     kind: single
     status: ran
-    base_model: baseline
+    base_model: viva_munk.composites.inclusion_bodies
     duration_steps: 1201
     seeds: 1
     metrics:
