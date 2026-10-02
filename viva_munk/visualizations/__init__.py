@@ -1,16 +1,18 @@
 """Visualization Step subclasses for viva-munk composite docs.
 
-Follows the pbg-superpowers Visualization convention: each subclass
-consumes per-step state via wires (like an emitter), accumulates frames
-internally, and returns ``{'html': '<rendered>'}`` each update.
+Follows the new-style viva-superpowers Visualization convention: each
+subclass consumes per-step state via wires (like an emitter), buffers
+per-tick frame data in ``accumulate(state)`` (no rendering), and builds
+the figure ONCE in ``render() -> str``. The baseclass orchestrator owns
+``update()`` — subclasses do NOT override it.
 
 ``MultibodyVizStep`` delegates per-frame rendering to ``GifRenderer``
 from ``viva_munk.plots.multibody_plots`` — the same renderer the
 post-run pipeline (``viva_munk.experiments.runner.simulation_to_gif``)
-uses for the on-disk GIFs in ``out/``. Frames are accumulated in the
-Step instance and re-encoded as an inline animated GIF data URI on
-every ``update()``; the GIF assembly uses the same quantize + disposal
-pattern as ``simulation_to_gif`` so visuals match 1:1.
+uses for the on-disk GIFs in ``out/``. Each tick's PIL frame is drawn
+and appended to an internal buffer in ``accumulate``; the quantize +
+animated-GIF encode happens once in ``render``, using the same quantize
++ disposal pattern as ``simulation_to_gif`` so visuals match 1:1.
 
 Per-composite color modes (pressure / qs_state / inclusion_body) are
 config flags on the Step; phylogeny coloring is deferred (needs full
@@ -97,22 +99,24 @@ def _color_by_inclusion_body(ib_max=10.0, cmap_name='plasma',
 
 
 class MultibodyVizStep(Visualization):
-    """Streaming animated-GIF renderer matching the test-suite GIF style.
+    """End-of-run animated-GIF renderer matching the test-suite GIF style.
 
-    Per ``update(state)``:
+    Per ``accumulate(state)`` (once per tick):
       1. Merge cells + particles into one layer, stamp the static field
          onto the frame so the heatmap overlay renders every tick.
       2. ``GifRenderer.draw_frame(...)`` → PIL Image; append to internal
-         ``self._frames``.
+         ``self._frames`` (bounded FIFO by ``max_frames``).
+
+    Once, in ``render()`` at end-of-run:
       3. Quantize all accumulated frames (MEDIANCUT, 256 colors) and
          encode as an animated GIF in-memory (``disposal=2``,
          ``optimize=False`` — same pattern as ``simulation_to_gif``).
-      4. Return ``{'html': '<img src="data:image/gif;base64,..."/>'}``.
+      4. Return ``'<img src="data:image/gif;base64,..."/>'``.
 
-    Performance: re-encoding the GIF on every tick is O(n²) in step count.
-    For dashboard test runs (2–50 steps) this is sub-second; for longer
-    runs the ``max_frames`` cap drops oldest frames FIFO to bound memory
-    and encode time.
+    Performance: the quantize + GIF encode runs exactly ONCE (in
+    ``render``) rather than on every tick, so cost is linear in step
+    count instead of O(n²). The ``max_frames`` cap still drops oldest
+    frames FIFO to bound memory for long runs.
     """
 
     config_schema = {
@@ -233,9 +237,14 @@ class MultibodyVizStep(Visualization):
             'alpha': float(cfg.get('field_alpha', 0.35)),
         }
 
-    # ------------------------------------------------------------------ update
+    # ------------------------------------------------------------------ accumulate
 
-    def update(self, state, interval=1.0):
+    def accumulate(self, state):
+        """Buffer one frame per tick — no quantize, no encode.
+
+        This is the per-tick frame capture the legacy ``update`` did,
+        minus the GIF assembly (which now happens once in ``render``).
+        """
         cfg = self.config or {}
         cells = state.get('cells') or {}
         particles = state.get('particles') or {}
@@ -277,12 +286,26 @@ class MultibodyVizStep(Visualization):
         # independent before quantize.
         self._frames.append(pil.copy())
 
-        # Bound memory & encode time.
+        # Bound memory. Older frames dropped FIFO once exceeded.
         max_frames = int(cfg.get('max_frames', 200))
         if len(self._frames) > max_frames:
             self._frames = self._frames[-max_frames:]
 
-        # Encode accumulated frames as animated GIF.
+    # ------------------------------------------------------------------ render
+
+    def render(self) -> str:
+        """Quantize + encode the accumulated frames as one animated GIF.
+
+        Runs ONCE at end-of-run. Same quantize + disposal pattern as
+        ``simulation_to_gif`` so the inline GIF matches the on-disk one.
+        """
+        cfg = self.config or {}
+        if not self._frames:
+            return (
+                '<p style="color:#888;padding:8px">'
+                'No frames captured yet</p>'
+            )
+
         # Same quantize + disposal pattern as simulation_to_gif.
         palette = [
             f.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
@@ -299,12 +322,11 @@ class MultibodyVizStep(Visualization):
             disposal=2,
         )
         b64 = base64.b64encode(buf.getvalue()).decode('ascii')
-        html = (
+        return (
             f'<img src="data:image/gif;base64,{b64}" '
             f'style="max-width:100%;height:auto;display:block;" '
             f'alt="multibody run"/>'
         )
-        return {'html': html}
 
 
 # ---------------------------------------------------------------- composite helpers

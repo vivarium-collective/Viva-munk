@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "viva-munk"
-version = "0.0.7"
+version = "0.0.8"
 description = "multi-cell simulations with pymunk 2d physics"
 readme = "README.md"
 license = { text = "MIT" }
