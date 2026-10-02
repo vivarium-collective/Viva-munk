@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "viva-munk"
-version = "0.0.6"
+version = "0.0.7"
 description = "multi-cell simulations with pymunk 2d physics"
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,7 +21,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "process-bigraph>=1.8.2",  # composite_generator core_extensions (used by our generators) landed in 1.8.0
+    "process-bigraph>=1.8.5",  # composite_generator core_extensions (used by our generators) landed in 1.8.0
     "bigraph-schema>=0.0.60",
     "bigraph-viz",
     "pymunk",
@@ -37,7 +37,7 @@ dependencies = [
     # `pip install viva-munk` fails with `No module named 'viva_emitters'` unless
     # viva-emitters is declared (it was previously satisfied transitively only
     # when the workbench happened to be installed alongside).
-    "viva-emitters",
+    "viva-emitters>=0.4.2",
 ]
 
 [project.optional-dependencies]
